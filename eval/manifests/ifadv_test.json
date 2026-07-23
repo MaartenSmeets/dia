@@ -1,0 +1,19 @@
+{
+ "dataset": "ifadv",
+ "split": "test",
+ "dialogues": [
+  "DVA2C",
+  "DVA4C",
+  "DVA7B",
+  "DVA9M",
+  "DVA11Q",
+  "DVA13U",
+  "DVA15Y",
+  "DVA17AC",
+  "DVA20AI",
+  "DVA24AK"
+ ],
+ "HELD_OUT": "never tune on this",
+ "audio_dir": "data/ifadv",
+ "references_dir": "eval/references/ifadv"
+}

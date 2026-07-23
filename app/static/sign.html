@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CGN licentie ondertekenen</title>
+<link rel="stylesheet" href="/static/style.css">
+<style>
+  main { max-width: 720px; }
+  .field { display: grid; grid-template-columns: 160px 1fr; gap: 10px; margin: 10px 0; align-items: center; }
+  .field input { width: 100%; background: var(--panel); color: var(--text); border: 1px solid #fff3; border-radius: 6px; padding: 8px; }
+  #sig { background: #fff; border-radius: 8px; touch-action: none; width: 100%; max-width: 560px; height: 160px; display: block; }
+  #result img { max-width: 100%; border-radius: 8px; margin-top: 10px; }
+  .ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<header><h1>CGN licentie — invullen &amp; ondertekenen</h1></header>
+<main>
+  <p class="muted">Vul de resterende velden in, zet je handtekening in het witte vak (muis of vinger),
+  en klik <b>Genereer ondertekende PDF</b>. Alles blijft lokaal op de DGX Spark.
+  Daarna: download de PDF, controleer hem, en mail hem naar <code>servicedesk@ivdnt.org</code>
+  (concepttekst: <code>data/cgn/order/MAIL_DRAFT.txt</code>).</p>
+
+  <div class="field"><label>Naam licentienemer</label><input id="naam" placeholder="Volledige naam"></div>
+  <div class="field"><label>Woonachtig te</label><input id="woonplaats" placeholder="Woonplaats"></div>
+  <div class="field"><label>Datum</label><input id="datum"></div>
+  <div class="field"><label>Postadres</label><input id="postadres" placeholder="Straat + nr, postcode, plaats"></div>
+  <div class="field"><label>Telefoonnummer</label><input id="telefoon" placeholder="+31 ..."></div>
+
+  <p><b>Handtekening:</b> <button id="clear">wissen</button></p>
+  <canvas id="sig" width="560" height="160"></canvas>
+
+  <p><button id="submit" class="primary">Genereer ondertekende PDF</button>
+     <span id="status" class="muted"></span></p>
+  <div id="result" hidden>
+    <p class="ok">PDF gegenereerd ✓ — <a id="dl" href="#" download>download Licentie-NC_CGN_ONDERTEKEND.pdf</a></p>
+    <p class="muted">Controleer de handtekeningpagina hieronder vóór het mailen:</p>
+    <img id="preview" alt="preview handtekeningpagina">
+  </div>
+</main>
+<script>
+const c = document.getElementById("sig"), ctx = c.getContext("2d");
+ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+ctx.strokeStyle = "#102a6b"; ctx.lineWidth = 2.2; ctx.lineCap = "round";
+let drawing = false, drew = false;
+const pos = (e) => {
+  const r = c.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return [(p.clientX - r.left) * c.width / r.width, (p.clientY - r.top) * c.height / r.height];
+};
+const start = (e) => { drawing = true; drew = true; const [x, y] = pos(e); ctx.beginPath(); ctx.moveTo(x, y); e.preventDefault(); };
+const move = (e) => { if (!drawing) return; const [x, y] = pos(e); ctx.lineTo(x, y); ctx.stroke(); e.preventDefault(); };
+const end = () => { drawing = false; };
+c.addEventListener("mousedown", start); c.addEventListener("mousemove", move); window.addEventListener("mouseup", end);
+c.addEventListener("touchstart", start); c.addEventListener("touchmove", move); c.addEventListener("touchend", end);
+document.getElementById("clear").onclick = () => { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); drew = false; };
+document.getElementById("datum").value = new Date().toLocaleDateString("nl-NL");
+
+document.getElementById("submit").onclick = async () => {
+  const f = (id) => document.getElementById(id).value.trim();
+  if (!f("naam") || !f("woonplaats") || !f("postadres")) { document.getElementById("status").textContent = "vul naam, woonplaats en postadres in"; return; }
+  if (!drew) { document.getElementById("status").textContent = "handtekening ontbreekt"; return; }
+  document.getElementById("status").textContent = "bezig…";
+  const r = await fetch("/api/sign", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ naam: f("naam"), woonplaats: f("woonplaats"), datum: f("datum"),
+                           postadres: f("postadres"), telefoon: f("telefoon"),
+                           signature: c.toDataURL("image/png") }) });
+  const d = await r.json();
+  if (!d.pdf) { document.getElementById("status").textContent = "mislukt: " + (d.detail || JSON.stringify(d)); return; }
+  document.getElementById("status").textContent = "";
+  document.getElementById("dl").href = d.pdf;
+  document.getElementById("preview").src = d.preview + "?t=" + Date.now();
+  document.getElementById("result").hidden = false;
+};
+</script>
+</body>
+</html>

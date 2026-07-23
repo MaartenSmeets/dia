@@ -1,0 +1,55 @@
+{
+ "dataset": "cgn_tel",
+ "split": "test",
+ "HELD_OUT": "never tune on this",
+ "items": [
+  {
+   "utt": "fn006870",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006870.wav",
+   "n_speakers": 2,
+   "duration": 605.6
+  },
+  {
+   "utt": "fn008173",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-c/nl/fn008173.wav",
+   "n_speakers": 2,
+   "duration": 277.9
+  },
+  {
+   "utt": "fn006856",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006856.wav",
+   "n_speakers": 2,
+   "duration": 427.4
+  },
+  {
+   "utt": "fn006738",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006738.wav",
+   "n_speakers": 2,
+   "duration": 547.1
+  },
+  {
+   "utt": "fn006748",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006748.wav",
+   "n_speakers": 2,
+   "duration": 477.2
+  },
+  {
+   "utt": "fn006906",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006906.wav",
+   "n_speakers": 2,
+   "duration": 574.2
+  },
+  {
+   "utt": "fn006871",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006871.wav",
+   "n_speakers": 2,
+   "duration": 333.3
+  },
+  {
+   "utt": "fn006884",
+   "wav": "data/cgn/CGN_2.0.3/data/audio/wav/comp-d/nl/fn006884.wav",
+   "n_speakers": 2,
+   "duration": 416.8
+  }
+ ]
+}

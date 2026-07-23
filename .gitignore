@@ -1,0 +1,23 @@
+# geheimen — NOOIT committen
+.env
+.ivdnt.json
+certs/
+
+# grote/gelicenseerde data (CGN is NC-gelicenseerd; IFADV research-only) en modellen
+data/
+models/
+venvs/
+
+# experimentresultaten en logs (samengevat in docs/; te groot voor git)
+eval/results/
+eval/references/
+*.log
+
+# runtime
+__pycache__/
+*.pyc
+nohup.out
+
+# geëxporteerde eval-audio (afgeleid van gelicenseerde corpora, groot)
+eval/audio/
+docs-intern/

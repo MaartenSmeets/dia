@@ -1,0 +1,7 @@
+{
+ "SUMMARIZER_URL": "http://localhost:8000/v1",
+ "SUMMARIZER_MODEL": "qwen36",
+ "JUDGE_URL": "",
+ "JUDGE_MODEL": "",
+ "_autodetected": true
+}

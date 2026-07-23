@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>dia — Nederlandse gespreksverslaglegging</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>dia</h1>
+  <span class="sub">Live transcriptie · sprekerherkenning · gespreksverslag — volledig lokaal</span>
+  <span id="conn-status" class="pill" hidden></span>
+  <span id="engine-status" class="pill">engine…</span>
+  <button id="expert-toggle" data-tip="Toont of verbergt technische functies (evaluatie, engine-instellingen).">geavanceerd</button>
+</header>
+
+<nav id="tabs">
+  <button data-tab="meeting" class="active" data-tip="Neem een gesprek op. De opname loopt door op de server, ook als uw laptop de verbinding verliest.">Gesprek</button>
+  <button data-tab="file" data-tip="Upload een audiobestand (ook m4a van uw telefoon) voor transcriptie en gespreksverslag.">Bestand</button>
+  <button data-tab="sessions" data-tip="Alle opnames, uploads en transcripties op één plek. Klik op een item om te lezen, corrigeren en downloaden.">Archief</button>
+  <button data-tab="live" class="expert-only" data-tip="Snelle motor-test: spreek in via de microfoon en zie de transcriptie direct verschijnen. Voor echte gesprekken: tab Gesprek.">Live</button>
+  <button data-tab="eval" class="expert-only" data-tip="Test de nauwkeurigheid op gesprekken met een bekende referentietekst (WER/cpWER/DER).">Evaluatie</button>
+  <button data-tab="config" data-tip="Instellingen: verslag-taalmodel, verslagsjablonen en (geavanceerd) het spraakherkenningsmodel.">Instellingen</button>
+</nav>
+
+<main>
+  <!-- LIVE -->
+  <section id="tab-live" class="tab">
+    <div class="controls">
+      <button id="mic-btn" class="primary" data-tip="Start de microfoon van dit apparaat. De transcriptie verschijnt live; grijze tekst is nog voorlopig.">🎙 Start microfoon</button>
+      <span id="live-status" class="muted"></span>
+      <span id="live-conn" class="muted"></span>
+      <span id="lag" class="muted expert-only" data-tip="Vertraging tussen spreken en definitieve tekst (asr) en sprekerlabels (diar)."></span>
+    </div>
+    <div id="live-transcript" class="transcript"></div>
+    <div class="controls" style="margin-top:10px">
+      <button id="live-summarize" data-tip="Maak of ververs het gespreksverslag van het gesprek tot nu toe (lokale LLM).">📋 Gespreksverslag bijwerken</button>
+      <label data-tip="Ververst het gespreksverslag automatisch elke 60 seconden."><input type="checkbox" id="live-summarize-auto"> automatisch (60 s)</label>
+      <span id="summary-status" class="muted"></span>
+    </div>
+    <div id="live-summary" class="transcript" style="min-height:60px" hidden></div>
+  </section>
+
+  <!-- MEETING -->
+  <section id="tab-meeting" class="tab active">
+    <p class="muted">De gespreksopname draait op de server: sluit uw laptop, verlies de wifi — de opname
+    loopt door en uw microfoon koppelt automatisch opnieuw aan. Na afloop zijn audio, transcript en
+    gespreksverslag te downloaden.</p>
+    <div class="controls" id="meeting-new">
+      <label data-tip="Naam waaronder het gesprek wordt opgeslagen."><input id="meeting-name" placeholder="naam van het gesprek"></label>
+      <label data-tip="Verslagvorm voor dit gesprek. Bij ‘automatisch’ kiest het taalmodel na afloop het meest passende sjabloon op basis van het transcript (standaard: algemeen verslag). Achteraf altijd te wijzigen in het Archief.">verslagvorm
+        <select id="meeting-template"><option value="">automatisch (taalmodel kiest)</option></select></label>
+      <button id="meeting-start" class="primary" data-tip="Start een nieuwe gespreksopname met de microfoon van dit apparaat.">● Start gesprek</button>
+      <label data-tip="Noodoplossing voor een zwakke of trage verbinding: verlaagt het dataverbruik van de microfoonstream fors (12 i.p.v. 32 kbit/s); de herkenning merkt er weinig van. Wordt bij aanhoudende traagheid ook automatisch ingeschakeld."><input type="checkbox" id="audio-zuinig"> spaarzame verbinding</label>
+      <span id="meeting-status" class="muted"></span>
+    </div>
+    <div id="meeting-active" hidden>
+      <div class="controls">
+        <b id="meeting-title"></b>
+        <span id="meeting-feed-state" class="pill" data-tip="Status van de microfoonverbinding. Bij ‘niet verbonden’ loopt de opname op de server door; koppel opnieuw aan via de lijst hieronder."></span>
+        <span id="meeting-time" class="muted"></span>
+        <button id="meeting-stop" class="rec" data-tip="Beëindig het gesprek en maak het definitieve gespreksverslag en de downloads.">⏹ Stop &amp; rond af</button>
+      </div>
+      <div class="split">
+        <div><h3>Live transcript</h3><div id="meeting-transcript" class="transcript"></div></div>
+        <div><h3>Gespreksverslag (doorlopend)</h3><div id="meeting-summary" class="transcript"></div></div>
+      </div>
+    </div>
+    <h3 style="margin-top:18px">Actief gesprek</h3>
+    <div id="meetings-list" class="list"></div>
+    <p class="muted">Afgeronde gesprekken vindt u in het <b>Archief</b>.</p>
+  </section>
+
+  <!-- FILE -->
+  <section id="tab-file" class="tab">
+    <div class="controls">
+      <label data-tip="Alle gangbare audioformaten, inclusief m4a-opnames van uw telefoon."><input type="file" id="file-input" accept="audio/*,.m4a,.aac,.mp3,.wav,.flac,.ogg,.webm"></label>
+      <label data-tip="Egaliseert het volume (EBU R128). Aan te raden bij zachte of wisselende telefoonopnames."><input type="checkbox" id="file-loudnorm" checked> volume normaliseren</label>
+      <label data-tip="‘Beste kwaliteit’ gebruikt het offline model met sprekerherkenning achteraf — aanbevolen voor opnames. ‘Realtime’ simuleert de live-verwerking.">verwerking <select id="file-speed">
+        <option value="offline" selected>beste kwaliteit (offline)</option>
+        <option value="1">realtime-simulatie (1×)</option>
+        <option value="0">snelle streaming-test</option>
+      </select></label>
+      <button id="file-run" class="primary" disabled data-tip="Upload het bestand en start de verwerking.">Upload &amp; verwerk</button>
+      <button id="file-stop" disabled>Stop</button>
+    </div>
+    <progress id="file-progress" max="1" value="0" hidden></progress>
+    <div id="file-transcript" class="transcript"></div>
+  </section>
+
+  <!-- EVAL -->
+  <section id="tab-eval" class="tab">
+    <div class="controls">
+      <label data-tip="Dataset met referentieteksten. ‘test’-sets zijn geblokkeerd voor tuning (alleen eindmeting)."><select id="eval-dataset"></select></label>
+      <label data-tip="Kies een opname uit de dataset."><select id="eval-item"></select></label>
+      <label data-tip="1× = realtime (meet ook de echte vertraging); sneller = alleen functionele controle.">snelheid <select id="eval-speed">
+        <option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option>
+      </select></label>
+      <button id="eval-run" class="primary" data-tip="Speel de opname door de live-pijplijn en vergelijk met de referentie.">Start evaluatie</button>
+      <button id="eval-stop" disabled>Stop</button>
+      <span id="eval-status" class="muted"></span>
+    </div>
+    <progress id="eval-progress" max="1" value="0" hidden></progress>
+    <div id="eval-scores" class="scores" hidden></div>
+    <div class="split">
+      <div><h3>Herkend (live)</h3><div id="eval-hyp" class="transcript"></div></div>
+      <div><h3>Referentie</h3><div id="eval-ref" class="transcript"></div></div>
+    </div>
+  </section>
+
+  <!-- SESSIONS -->
+  <section id="tab-sessions" class="tab">
+    <div class="controls">
+      <button id="sessions-refresh" data-tip="Ververs de lijst met opgeslagen sessies.">Vernieuwen</button>
+      <span class="muted">Alle opnames, uploads en transcripties op één plek — nieuwste eerst. Klik op een item om te lezen, te corrigeren en te downloaden.</span>
+    </div>
+    <div id="sessions-list" class="list"></div>
+    <div id="session-detail" hidden>
+      <h3 id="session-title"></h3>
+      <div class="card" id="detail-tools">
+        <h3 data-tip="Kies een verslagvorm en laat het gespreksverslag opnieuw maken op basis van dit transcript. Sjablonen beheert u onder Instellingen.">Gespreksverslag op maat</h3>
+        <div class="controls">
+          <label data-tip="De verslagvorm: bijv. algemeen verslag, letselschade-intake of regelingsgesprek.">verslagvorm
+            <select id="tpl-select"></select></label>
+          <button id="tpl-suggest" data-tip="Laat het taalmodel op basis van het transcript het meest passende sjabloon voorstellen (bij twijfel: algemeen verslag). U beslist: pas na ‘Gespreksverslag maken’ wordt het gebruikt.">🎯 Sjabloon voorstellen</button>
+          <button id="roles-guess" data-tip="Laat het taalmodel per spreker een rol voorstellen (bijv. jurist, cliënt). U kunt de voorstellen daarna aanpassen; ze worden pas gebruikt nadat u ze bevestigt.">👥 Rollen laten voorstellen</button>
+          <button id="detail-resummarize" class="primary" data-tip="Maak het gespreksverslag opnieuw volgens het gekozen sjabloon. Bevestigde sprekerrollen worden daarin gebruikt.">📋 Gespreksverslag maken</button>
+          <span id="detail-tools-status" class="muted"></span>
+        </div>
+        <div id="roles-editor" hidden>
+          <p class="muted">Controleer de rollen en pas ze aan waar nodig. Pas na <b>bevestigen</b> gebruikt het gespreksverslag deze rolnamen.</p>
+          <div id="roles-rows"></div>
+          <div class="controls">
+            <button id="roles-confirm" class="primary" data-tip="Sla de rollen op en gebruik ze voortaan in gespreksverslagen van dit gesprek.">✔ Rollen bevestigen</button>
+            <span id="roles-status" class="muted"></span>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="correction-save" class="primary" data-tip="Sla de gecorrigeerde tekst en sprekers op als referentiemateriaal.">Correctie opslaan</button>
+        <span id="correction-status" class="muted"></span>
+      </div>
+      <div id="session-summary" class="transcript" style="min-height:40px" hidden></div>
+      <div class="controls" id="summary-tools" hidden>
+        <button id="sum-edit" data-tip="Bewerk het gespreksverslag zelf. Bij opslaan ontstaat een nieuwe versie; eerdere versies blijven bewaard.">✏ Bewerken</button>
+        <label data-tip="Alle versies van het gespreksverslag, nieuwste eerst, met wie/wat de wijziging maakte. Kies een versie om die te bekijken.">versies
+          <select id="sum-versions"></select></label>
+        <button id="sum-restore" hidden data-tip="Maak de gekozen eerdere versie weer het actieve gespreksverslag. Er gaat niets verloren: ook dit is terug te draaien.">↩ Deze versie herstellen</button>
+        <span id="sum-status" class="muted"></span>
+      </div>
+      <textarea id="sum-editor" rows="14" hidden></textarea>
+      <div class="controls" id="sum-edit-controls" hidden>
+        <button id="sum-save" class="primary" data-tip="Sla uw bewerking op als nieuwe versie van het gespreksverslag.">Opslaan</button>
+        <button id="sum-cancel">Annuleren</button>
+      </div>
+      <div id="session-editor"></div>
+    </div>
+  </section>
+
+  <!-- CONFIG -->
+  <section id="tab-config" class="tab">
+    <div class="card">
+      <h3 data-tip="Het lokale taalmodel dat gespreksverslagen maakt (OpenAI-compatibel endpoint, bijv. vLLM).">Externe services</h3>
+      <p id="llm-status" class="muted">Taalmodel voor gespreksverslagen: controleren…</p>
+      <div class="controls">
+        <button id="settings-autodetect" data-tip="Zoekt automatisch een draaiend lokaal taalmodel en selecteert het eerste beschikbare model.">🔍 Automatisch detecteren</button>
+        <span id="settings-status" class="muted"></span>
+      </div>
+      <div class="field expert-only"><label data-tip="Adres van het samenvattings-LLM, bijv. http://localhost:8000/v1">Samenvatter URL</label><input id="set-sum-url" placeholder="http://localhost:8000/v1"></div>
+      <div class="field expert-only"><label data-tip="Modelnaam zoals het endpoint die verwacht (served-model-name).">Samenvatter model</label><input id="set-sum-model" placeholder="qwen36"></div>
+      <div class="field expert-only"><label data-tip="Optioneel: apart (sterker) model voor kwaliteitsbeoordelingen. Leeg = zelfde als samenvatter.">Beoordelaar URL</label><input id="set-judge-url" placeholder="(optioneel)"></div>
+      <div class="field expert-only"><label>Beoordelaar model</label><input id="set-judge-model" placeholder="(optioneel)"></div>
+      <div class="controls expert-only">
+        <button id="settings-save" class="primary" data-tip="Bewaar de instellingen; ze blijven behouden na een herstart.">Opslaan</button>
+        <button id="settings-test" data-tip="Controleer of het samenvattings-endpoint bereikbaar is.">Test verbinding</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3 data-tip="Verslagvormen voor gespreksverslagen. Elk sjabloon is een lijst onderdelen die het taalmodel invult; per gesprek kiest u in het Archief welk sjabloon wordt gebruikt.">Verslagsjablonen</h3>
+      <div class="controls">
+        <label data-tip="Kies een sjabloon om te bekijken of te bewerken.">verslagvorm
+          <select id="tplm-select"></select></label>
+        <button id="tplm-new" data-tip="Begin een nieuw, leeg sjabloon.">＋ Nieuw</button>
+        <button id="tplm-delete" data-tip="Verwijder het gekozen sjabloon definitief.">🗑 Verwijderen</button>
+      </div>
+      <div class="field"><label data-tip="De naam waaronder het sjabloon in de keuzelijsten verschijnt.">Naam</label>
+        <input id="tplm-naam" placeholder="bijv. Letselschade-intakegesprek"></div>
+      <div class="field"><label data-tip="Optionele extra aanwijzing voor het taalmodel, bijv. over toon of nauwkeurigheid.">Instructie</label>
+        <input id="tplm-instructie" placeholder="(optioneel)"></div>
+      <p class="muted" data-tip="Eén onderdeel per regel. Het taalmodel vult elk onderdeel in; onderdelen zonder informatie krijgen ‘niet besproken’.">Onderdelen — één per regel:</p>
+      <textarea id="tplm-secties" rows="8" spellcheck="false" style="font-family:inherit"></textarea>
+      <div class="controls">
+        <button id="tplm-save" class="primary" data-tip="Sla het sjabloon op; het is direct beschikbaar in het Archief.">Opslaan</button>
+        <span id="tplm-status" class="muted"></span>
+      </div>
+    </div>
+    <div class="card expert-only">
+      <h3 data-tip="Geavanceerd: instellingen van de spraakherkenningsengine (WhisperLiveKit-vlaggen).">Spraakherkenning (geavanceerd)</h3>
+      <p class="muted">Wijzigingen herladen de engine (10–60 s). Nuttige opties: <code>--model</code> (large-v3-turbo aanbevolen), <code>--frame-threshold</code> (latentie/kwaliteit), <code>--init-prompt</code> (vakjargon).</p>
+      <textarea id="config-json" rows="12" spellcheck="false"></textarea>
+      <div class="controls">
+        <button id="config-apply" class="primary" data-tip="Pas de engine-instellingen toe en herlaad de engine.">Toepassen &amp; herladen</button>
+        <span id="config-status" class="muted"></span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

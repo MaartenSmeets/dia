@@ -1,0 +1,10 @@
+# dia is (bewust) geen installeerbaar Python-package: de app draait uit de repo met
+# drie gescheiden, exact bevroren omgevingen (requirements/{wlk,eval,vox}.txt) omdat de
+# live-motor, de nabewerking en de Voxtral-meting conflicterende pins hebben (CLAUDE.md).
+# Dit bestand dient als projectmarker/metadata; installatie = scripts/setup.sh (uv).
+[project]
+name = "dia"
+version = "1.0.0"
+description = "Nederlandse gespreksverslaglegging, volledig lokaal (live ASR + diarization + verslagsjablonen)"
+requires-python = "==3.12.*"
+license = { file = "LICENSE" }

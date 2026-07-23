@@ -1,0 +1,8 @@
+{
+ "--model": "large-v3-turbo",
+ "--lan": "nl",
+ "--diarization": true,
+ "--diarization-backend": "sortformer",
+ "--disable-fast-encoder": true,
+ "--backend-policy": "simulstreaming"
+}

@@ -1,0 +1,25 @@
+{
+ "dataset": "ifadv",
+ "split": "dev-hybrid",
+ "note": "synthetische hybride-vergadering-set, zie scripts/make_hybrid_ifadv.py",
+ "items": [
+  {
+   "utt": "DVA1A",
+   "wav": "data/hybrid/deg/DVA1A.wav",
+   "n_speakers": 2,
+   "duration": 900.0
+  },
+  {
+   "utt": "DVA3E",
+   "wav": "data/hybrid/deg/DVA3E.wav",
+   "n_speakers": 2,
+   "duration": 900.0
+  },
+  {
+   "utt": "DVA6H",
+   "wav": "data/hybrid/deg/DVA6H.wav",
+   "n_speakers": 2,
+   "duration": 900.0
+  }
+ ]
+}

@@ -1,0 +1,20 @@
+# dia via docker compose (GPU vereist: NVIDIA Container Toolkit).
+#   docker compose up -d --build
+# Data, modellen en instellingen leven op de host (volumes) en overleven de container.
+services:
+  dia:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ./data:/opt/dia/data          # opnames, transcripten, verslagen, HF-modelcache
+      - ./models:/opt/dia/models      # optionele LoRA-adapters
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
