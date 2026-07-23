@@ -1,6 +1,8 @@
 # PLAN.md — build plan, phases, acceptance criteria
 
-Decisions and rationale live in [RESEARCH.md](RESEARCH.md). This is the execution plan. Status of each phase is tracked in [PROGRESS.md](PROGRESS.md).
+**Status (2026-07-23): fases 0 t/m 5 zijn afgerond en fase 6 (consolidatie) is doorlopend
+onderhouden — dit document is het historische bouwplan; de actuele stand leeft in
+[PROGRESS.md](PROGRESS.md).** Decisions and rationale live in [RESEARCH.md](RESEARCH.md).
 
 ## Requirements (from the user, 2026-07-15)
 
@@ -11,13 +13,13 @@ Decisions and rationale live in [RESEARCH.md](RESEARCH.md). This is the executio
 - Web interface to experiment; curated Dutch data with per-speaker reference transcriptions; measure and iterate on accuracy.
 - Gated HF models allowed (token in `.env`).
 
-## Phase 0 — Environment (R1, R2, R7)  ✅ acceptance criteria
+## Phase 0 — Environment (R1, R2, R7)  ✅
 
 1. `venvs/wlk`: torch 2.11.0 cu130 aarch64 → `torch.cuda.is_available() == True`, matmul on GPU finite.
 2. `whisperlivekit[diarization-sortformer]==0.2.24` installs cleanly on aarch64/py3.12 (else fall back per RESEARCH §4 step 3: NGC NeMo container).
 3. `wlk --help` output recorded in SETUP.md; flags used in scripts verified to exist.
 
-## Phase 1 — Data (R10)
+## Phase 1 — Data (R10)  ✅
 
 1. IFADV downloaded + unzipped; inventory matches: 20 annotated dyadic dialogues, stereo WAV (A=left, B=right), `.ort`/`.awd` TextGrids.
 2. HF sets cached locally: FLEURS-nl test, MLS-nl test/dev, CV-nl test (fsicoli v22), VoxPopuli-nl sample.
@@ -25,14 +27,14 @@ Decisions and rationale live in [RESEARCH.md](RESEARCH.md). This is the executio
 4. Fixed splits committed: `eval/manifests/ifadv_dev.json` (10 dialogues), `eval/manifests/ifadv_test.json` (10 dialogues, **held out — never tune on it**).
 5. CGN license request instructions delivered to user (docs/DATASETS.md §CGN) — user action.
 
-## Phase 2 — Live pipeline go/no-go (R3 partially, R7, R12)
+## Phase 2 — Live pipeline go/no-go (R3 partially, R7, R12)  ✅
 
 1. WLK server runs: `--model large-v3 --language nl --diarization --diarization-backend sortformer --disable-fast-encoder`.
 2. An IFADV WAV streamed over the WebSocket at realtime pace produces sensible Dutch partials + speaker labels; no crash over a full 15-min dialogue.
 3. Browser mic works on localhost with the bundled UI.
 4. GPU/unified memory usage recorded (`free -h` before/during).
 
-## Phase 3 — Experiment web app
+## Phase 3 — Experiment web app  ✅
 
 FastAPI app (`app/`) embedding WLK's `TranscriptionEngine`/`AudioProcessor` (template: WLK `basic_server.py`), custom frontend. Features, in build order:
 1. **Live mode:** mic capture → WebSocket → live transcript, speaker-colored, partial (gray) vs finalized text; session save to SegLST.
@@ -44,7 +46,7 @@ FastAPI app (`app/`) embedding WLK's `TranscriptionEngine`/`AudioProcessor` (tem
 
 Acceptance: all six features demonstrated; app documented in WEBAPP.md; survives a 30-min live session.
 
-## Phase 4 — Evaluation harness + baselines (R11)
+## Phase 4 — Evaluation harness + baselines (R11)  ✅
 
 1. `eval/run_eval.py`: manifest in → stream via WS at realtime pace → SegLST out → meeteval cpWER + DER (collar 0.25, with overlap), jiwer WER with `eval/normalizer.py` (Dutch, versioned, tested) → latency percentiles (partial-word + finalization, needs IFADV `.awd` word times).
 2. Baselines on IFADV-dev + FLEURS-nl test:
@@ -55,7 +57,7 @@ Acceptance: all six features demonstrated; app documented in WEBAPP.md; survives
 
 ## Phase 5 — Bake-offs & accuracy iteration (R3, R4, R5, R6, R13)  ✅ AFGEROND 2026-07-23
 
-Uitkomsten (bewijs in COMPARISON.md, CGN-VALUE.md, SUMMARY-EVAL.md):
+Uitkomsten (bewijs in [COMPARISON.md](COMPARISON.md), [CGN-VALUE.md](CGN-VALUE.md), [SUMMARY-EVAL.md](SUMMARY-EVAL.md)):
 1. **ASR bake-off ✅:** live = **large-v3-turbo** (won de sweep, Update 1/2); offline refine =
    **turbo+CGN-LoRA (M2)** — versloeg canary-1b-v2, parakeet-tdt-0.6b-v3 én Voxtral-Mini-3B
    met 6–12 punten pooled WER op ifadv/cgn_a dev (Update 4). Voxtral-4B-Realtime bewust
@@ -70,16 +72,17 @@ Uitkomsten (bewijs in COMPARISON.md, CGN-VALUE.md, SUMMARY-EVAL.md):
 5. **CGN-LoRA ✅:** M-serie compleet; CGN = werkzaam bestanddeel (−7 WER; draagt over naar
    telefoonspraak −9,6); VERDICT + per-use-case-waardetabel in CGN-VALUE.md.
 
-Rest-experimenten: hybride-meeting per-spreker-audiobehandeling (taak #20, gepland);
-benchmark van het NL-overheidsspraakinitiatief bij release (taak #18, wekelijkse watch; details docs-intern/).
+Rest-experimenten: hybride-gesprek per-spreker-audiobehandeling is inmiddels gemeten en
+beantwoord (COMPARISON.md Update 5: niet nodig op realistisch degradatieniveau); de
+benchmark van het NL-overheidsspraakinitiatief wacht op een publieke release (watch is op
+gebruikersverzoek uitgeschakeld, 2026-07-23).
 
-## Phase 6 — Consolidation
+## Phase 6 — Consolidation  ✅ (doorlopend onderhouden)
 
 - SETUP.md complete as-built; PROGRESS.md summary entry; RESEARCH.md UNVERIFIED flags resolved (verified ✓ / refuted with note).
 - Final recommended default config written into the app as the startup preset.
 
 ## Standing decision rules
 
-- Prefer the boring, verified path (RESEARCH-confirmed) over novel options mid-build; new-model tips go into a "later" list in PROGRESS.md.
-- Any deviation from RESEARCH.md's recommendations must be recorded in PROGRESS.md with the evidence that forced it.
-- If an install fails twice on aarch64, stop patching and use the documented fallback (usually the NGC container) — do not yak-shave source builds unless the plan says so.
+Verplaatst naar [CLAUDE.md](../CLAUDE.md) §Standing decision rules — de canonieke plek
+voor voortzettingsregels.

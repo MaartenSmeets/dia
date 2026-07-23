@@ -19,6 +19,7 @@ bruikbaar voor elke situatie waarin vertrouwelijke gesprekken verslaglegging nod
 8. [Veelgestelde vragen en problemen](#veelgestelde-vragen-en-problemen)
 9. [Licenties, modellen en wat niet in de repo zit](#licenties-modellen-en-wat-niet-in-de-repo-zit)
 10. [Documentatiekaart](#documentatiekaart)
+11. [Status](#status)
 
 ---
 
@@ -35,7 +36,7 @@ de herkenning merkt daar nauwelijks iets van).
 **Definitieve versie, automatisch.** Na het stoppen maakt de server op de achtergrond een
 tweede, betere versie: het beste offline-model herleest de complete audio en het resultaat
 wordt gefuseerd met de live-sprekerindeling (deze fusiemethode won onze eigen metingen van
-alle alternatieven). In het Archief verschijnt "definitieve versie wordt gemaakt… (enkele
+alle alternatieven — zie [docs/COMPARISON.md](docs/COMPARISON.md), Update 3). In het Archief verschijnt "definitieve versie wordt gemaakt… (enkele
 minuten)" en daarna staan transcript, verslag en audio klaar als download.
 
 **Gespreksverslagen via sjablonen.** Een verslag volgt een sjabloon: standaard meegeleverd
@@ -254,8 +255,8 @@ en ruwe experimentresultaten (conclusies staan in docs/).
 | [docs/PROGRESS.md](docs/PROGRESS.md) | **Startpunt voor wie verder bouwt** (mens of AI): het levende logboek — wat af is, geverifieerd is en volgt. |
 | [docs/WEBAPP.md](docs/WEBAPP.md) | Architectuur van de app: API, WebSocket-protocol, vergadermodel, sjablonen/rollen/versiebeheer, verbindingsbewaking, testsuite. |
 | [docs/SETUP.md](docs/SETUP.md) | As-built installatie: uitsluitend commando's die hier daadwerkelijk gedraaid en geverifieerd zijn. |
-| [docs/COMPARISON.md](docs/COMPARISON.md) | De gemeten methode- en modelvergelijkingen (streaming vs offline, bake-off, fusie, hybride gesprekken). |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Meetmethodiek: WER/cpWER/DER, normalisatie, latentie, hoe je zelf meet. |
+| [docs/COMPARISON.md](docs/COMPARISON.md) | De gemeten methode- en modelvergelijkingen (streaming vs offline, bake-off, fusie, hybride gesprekken) — leest het best ná EVALUATION. |
 | [docs/SUMMARY-EVAL.md](docs/SUMMARY-EVAL.md) | Gemeten: sprekerlabels maken verslagen ×3,5 accurater — plus de meetprotocol-lessen. |
 | [docs/CGN-VALUE.md](docs/CGN-VALUE.md) | De CGN-licentiebeslissing: metingen, waardetabel per use-case, trainingsrecept. |
 | [docs/DATASETS.md](docs/DATASETS.md) | Alle gebruikte data: herkomst, licenties, downloadinstructies. |

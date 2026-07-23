@@ -1,6 +1,6 @@
 # RESEARCH.md — Fully-local realtime Dutch transcription + speaker diarization on NVIDIA DGX Spark
 
-**Status:** definitive research synthesis, verified against primary sources on 2026-07-15.
+**Status:** dag-1 onderzoekssynthese (geverifieerd tegen primaire bronnen 2026-07-15), inmiddels **historisch**: de addenda hieronder sluiten de open vragen; de gemeten eindstand staat in COMPARISON.md §Eindstand.
 **Target machine:** DGX Spark (GB10 Grace Blackwell, aarch64/SBSA, sm_121, CUDA 13.0 toolkit, driver 580.159.03, 128 GB unified LPDDR5x @ ~273 GB/s, Python 3.12.3, Ubuntu-based DGX OS, docker + ffmpeg installed, ~500 GB free disk).
 **Convention used throughout:** claims below are verified against primary sources unless marked **UNVERIFIED — test on machine**. Nothing marked REFUTED in verification is presented as fact.
 
@@ -11,7 +11,7 @@
 > - **R3 (measured, ongoing)** Streaming Sortformer on Dutch: healthy runs DER 12–18% per dialogue (pooled 26.9% fast mode), but **one realtime run collapsed to near-single-speaker** — stability sweep is the top live-quality experiment. Offline pyannote community-1 pooled DER 21.4% on IFADV-dev.
 > - **R10 ✓** IFADV TextGrid conversion validated (channel-VAD magnitudes consistent; crosstalk makes exact channel mapping fuzzy — irrelevant for permutation-invariant metrics).
 > - **R11 (measured)** Streaming-vs-offline gap for whisper large-v3 Dutch: FLEURS 22.2% vs 7.3% WER (short clips = worst case); IFADV conversations 35.0% vs 30.1% WER. Plus a new finding: **unpaced feeding degrades long-audio ASR badly** (49.3%) — see COMPARISON.md finding 2.
-> - **§4 Step 0.2 note:** swap was NOT disabled (system default kept); no memory pressure observed at ~27 GiB peak usage. Revisit only if larger models are co-resident.
+> - **§4 Step 0.2 note:** swap was NOT disabled (system default kept); no memory pressure observed at ~27 GiB peak usage. Revisit only if larger models are co-resident. *(Update 2026-07-21: co-residentie-OOM daadwerkelijk opgetreden — zie Addendum 3 en de CLAUDE.md-incidentregel.)*
 
 > **ADDENDUM 2 (2026-07-23, basisrace afgerond)** — resterende bake-off-onzekerheden gemeten
 > (tabellen: COMPARISON.md Update 4):
@@ -27,6 +27,22 @@
 > - **parakeet ✓(gemeten, verliest)** 28,8/43,2 pooled WER offline — zelfde les als canary.
 > - **Nieuwe systeemles (OPS-LLM.md):** vLLM-prefix-caching op hybride Mamba-modellen
 >   (Qwen3.6) corrumpeert deterministisch → altijd uit op deze machine.
+
+> **ADDENDUM 3 (2026-07-23, meetprogramma afgerond — einduitkomsten):**
+> - **Live default = whisper-large-v3-turbo**, niet large-v3: wint in de realtime sweep op
+>   alle metrieken (pooled 25,0 WER / 32,2 cpWER / 14,1 DER over 6 IFADV-dialogen).
+> - **Productiepad definitieve versie = fusie** van live-Sortformer-sprekerbeurten ×
+>   offline-M2-woorden (turbo+CGN-LoRA): 21,9/33,8/13,7 op IFADV-dev — wint van elke
+>   afzonderlijke methode; daarmee is de §2.4-attributievraag beantwoord.
+> - **Diarization is gemeten een voorwaarde, geen nice-to-have**: sprekerlabels geven ×3,5
+>   attributie-accuratesse in gespreksverslagen (SUMMARY-EVAL.md Results v4).
+> - **CGN-waarde gemeten**: −7 à −10 WER op spontaan NL; de comp-a-LoRA draagt vol over
+>   naar telefoonspraak (−9,6 WER zonder telefoontraining) — CGN-VALUE.md §VERDICT.
+> - **Woordlatentie live ~1,0 s p50 / ~1,35 s p90** (EVALUATION.md §Latency) — de
+>   ~2 s-producteis is ruim gehaald.
+> - **Update bij §4 Step 0.2 (swap/OOM):** het risico manifesteerde zich 2026-07-21 in
+>   mildere vorm (vLLM-default-0.9 OOM-kilde een lopende training; het OS bleef overeind).
+>   Mitigatie = de coexistentieregels in CLAUDE.md; swap is bewust aan gebleven.
 
 ---
 
@@ -50,12 +66,17 @@ The biggest empirical unknowns (all testable on-machine within days): Sortformer
 
 ### 2.1 Streaming ASR model + engine for Dutch
 
+> ⚠ **Dag-1 advies — op onderdelen achterhaald door meting:** de live default werd
+> `large-v3-turbo`, en Voxtral/parakeet/canary zijn alle drie gemeten en verliezen van de
+> turbo+CGN-LoRA-motor (Addendum 2; COMPARISON.md Update 4).
+
+
 | Role | Choice | Why on THIS machine |
 |---|---|---|
-| **Primary (integrated, day 1)** | **OpenAI Whisper `large-v3`** (MIT) served by **WhisperLiveKit's SimulStreaming (AlignAtt) policy**, pure PyTorch on GPU, `--language nl` | Works with official `torch` cu130 aarch64 wheels (sm_121 runs sm_120 binaries — confirmed by PyTorch maintainer ptrblck, Jan 2026). No CTranslate2 needed (whose PyPI aarch64 wheels are CPU-only — verified: built without `-DWITH_CUDA`). SimulStreaming was the best-performing system at IWSLT 2025 simultaneous shared task and is MIT since 2025-10-22. 3 GB fp16 model is trivial in 128 GB unified memory. Use `--disable-fast-encoder` so WLK does not try the faster-whisper/CT2 encoder path. `large-v3-turbo` (809M) is the latency-optimized variant to sweep. |
-| **Primary upgrade (pilot in week 2)** | **`mistralai/Voxtral-Mini-4B-Realtime-2602`** (Apache-2.0, Feb 2026) via WLK `--backend voxtral` (HF transformers ≥5.2.0) | The only *architecturally* streaming open model with Dutch: configurable delay = any multiple of 80 ms in 80–1200 ms, plus a standalone 2400 ms value (note: discrete set, not a continuum). Dutch FLEURS WER 7.07 % at 480 ms — better than Whisper large-v3. ~4 B params (≥16 GB memory) — fine here. Constraint: WLK declares `voxtral-hf` and `diarization-sortformer` **intentionally incompatible extras** (transformers 5.2 vs NeMo's ~4.57 pin) → separate venv; live Sortformer diarization is not available in the same process (see §8, R6). vLLM serving is now viable on Spark (official vLLM blog validated `vllm/vllm-openai:cu130-nightly` on GB10, 2026-06-01) — the older "needs custom build" advice is outdated. |
-| **Fallback / speed champion** | **`nvidia/parakeet-tdt-0.6b-v3`** (CC-BY-4.0, 600M) via NeMo | Confirmed running on DGX Spark GB10 at ~282.9× RTFx (NVIDIA forum + coder543/stt-bench-matrix; NGC PyTorch 25.10 container — avoid 25.12+/PyTorch 2.10 Sampler API breakage with older NeMo). Dutch: 7.48 % FLEURS / 12.78 % MLS. **Important correction:** it is *not* cache-aware streaming — the model card's streaming path is NeMo's *chunked/buffered* inference script (`speech_to_text_streaming_infer_rnnt.py`, defaults `chunk_secs=2, right_context_secs=2.0, left_context_secs=10.0` → ~4 s algorithmic latency before finalization; tunable down at an accuracy cost — **UNVERIFIED — test on machine**). Not a WLK backend → needs custom serving glue; use first in the offline eval harness, promote to live engine only if it wins the latency/WER trade-off. |
-| **Offline accuracy ceiling (eval only)** | **`nvidia/canary-1b-v2`** (CC-BY-4.0, 978M) | Best open Dutch numbers found anywhere: **6.12 % FLEURS-nl / 11.27 % MLS-nl**, 749 RTFx. Offline attention encoder-decoder — no native streaming (long-form via chunking). Use as the accuracy reference every streaming config is measured against. |
+| **Primary (integrated, day 1)** | **OpenAI Whisper `large-v3`** (MIT) served by **WhisperLiveKit's SimulStreaming (AlignAtt) policy**, pure PyTorch on GPU, `--language nl` | Works with official `torch` cu130 aarch64 wheels (sm_121 runs sm_120 binaries — confirmed by PyTorch maintainer ptrblck, Jan 2026). No CTranslate2 needed (whose PyPI aarch64 wheels are CPU-only — verified: built without `-DWITH_CUDA`). SimulStreaming was the best-performing system at IWSLT 2025 simultaneous shared task and is MIT since 2025-10-22. 3 GB fp16 model is trivial in 128 GB unified memory. Use `--disable-fast-encoder` so WLK does not try the faster-whisper/CT2 encoder path. `large-v3-turbo` (809M) is the latency-optimized variant to sweep. *(⚠ Uitkomst: de sweep is gedaan en turbo WON — live default sinds 2026-07-17, Addendum 3.)* |
+| **Primary upgrade (pilot in week 2)** ⚠ *achterhaald: offline-broer gemeten, verliest (Addendum 2)* | **`mistralai/Voxtral-Mini-4B-Realtime-2602`** (Apache-2.0, Feb 2026) via WLK `--backend voxtral` (HF transformers ≥5.2.0) | The only *architecturally* streaming open model with Dutch: configurable delay = any multiple of 80 ms in 80–1200 ms, plus a standalone 2400 ms value (note: discrete set, not a continuum). Dutch FLEURS WER 7.07 % at 480 ms — better than Whisper large-v3. ~4 B params (≥16 GB memory) — fine here. Constraint: WLK declares `voxtral-hf` and `diarization-sortformer` **intentionally incompatible extras** (transformers 5.2 vs NeMo's ~4.57 pin) → separate venv; live Sortformer diarization is not available in the same process (see §8, R6). vLLM serving is now viable on Spark (official vLLM blog validated `vllm/vllm-openai:cu130-nightly` on GB10, 2026-06-01) — the older "needs custom build" advice is outdated. |
+| **Fallback / speed champion** ⚠ *achterhaald: gemeten, verliest (Addendum 2)* | **`nvidia/parakeet-tdt-0.6b-v3`** (CC-BY-4.0, 600M) via NeMo | Confirmed running on DGX Spark GB10 at ~282.9× RTFx (NVIDIA forum + coder543/stt-bench-matrix; NGC PyTorch 25.10 container — avoid 25.12+/PyTorch 2.10 Sampler API breakage with older NeMo). Dutch: 7.48 % FLEURS / 12.78 % MLS. **Important correction:** it is *not* cache-aware streaming — the model card's streaming path is NeMo's *chunked/buffered* inference script (`speech_to_text_streaming_infer_rnnt.py`, defaults `chunk_secs=2, right_context_secs=2.0, left_context_secs=10.0` → ~4 s algorithmic latency before finalization; tunable down at an accuracy cost — **UNVERIFIED — test on machine**). Not a WLK backend → needs custom serving glue; use first in the offline eval harness, promote to live engine only if it wins the latency/WER trade-off. |
+| **Offline accuracy ceiling (eval only)** ⚠ *achterhaald: hypothese REFUTED (Addendum 2)* | **`nvidia/canary-1b-v2`** (CC-BY-4.0, 978M) | Best open Dutch numbers found anywhere: **6.12 % FLEURS-nl / 11.27 % MLS-nl**, 749 RTFx. Offline attention encoder-decoder — no native streaming (long-form via chunking). Use as the accuracy reference every streaming config is measured against. |
 | **Rejected** | Kyutai STT (no Dutch — EN/FR + EN-only models only, confirmed against live HF org listing 2026-07-15); faster-whisper GPU as primary (CT2 aarch64 wheels CPU-only; CUDA 13 support still an open request, OpenNMT/CTranslate2#1933; source build with arch `120;121` is a proven workaround, not a default); Qwen3-ASR as primary (Dutch supported but **no published Dutch WER** — pilot only; timestamps require the separate `Qwen3-ForcedAligner-0.6B`); Dutch Whisper fine-tune `yuriyvnv/whisper-large-v3-high-mixed-nl` (4.43 % on CV17-nl but **20.29 % on MLS-nl** — hard evidence of read-speech overfitting); `Jaspernl/whisper-large-v3-ft-nl` (HTTP 401 — private/inaccessible). |
 
 ### 2.2 Streaming diarization
@@ -74,7 +95,7 @@ The biggest empirical unknowns (all testable on-machine within days): Sortformer
 
 ### 2.4 Word-to-speaker attribution
 
-- **Primary: WLK's built-in alignment** (`whisperlivekit/tokens_alignment.py`, verified in source): groups ASR tokens into punctuation/silence-delimited segments, merges consecutive same-speaker diarization segments, assigns each group the speaker with **maximum temporal overlap** (`intersection_duration` argmax), and **buffers unlabeled tokens when diarization lags ASR** (back-fills speaker labels at the live edge). This is the dominant, production-proven approach.
+- **Primary: WLK's built-in alignment** (`whisperlivekit/tokens_alignment.py`, verified in source): groups ASR tokens into punctuation/silence-delimited segments, merges consecutive same-speaker diarization segments, assigns each group the speaker with **maximum temporal overlap** (`intersection_duration` argmax), and **buffers unlabeled tokens when diarization lags ASR** (back-fills speaker labels at the live edge). This is the dominant, production-proven approach. *(⚠ Gemeten eindstand: voor de definitieve versie won de FUSIE-attributie — live-Sortformer-beurten × offline-woorden — zie Addendum 3 / COMPARISON.md Update 3.)*
 - **Fallback / offline refinement:** pyannote community-1 **exclusive diarization** output → word assignment becomes a direct lookup; use for the offline reference transcripts and for scoring speaker-attributed WER.
 
 ### 2.5 Serving / web layer
@@ -102,6 +123,12 @@ The biggest empirical unknowns (all testable on-machine within days): Sortformer
 ---
 
 ## 4. Install plan (exact commands)
+
+> ⚠ **Historisch (pre-installatieplan).** De werkelijk uitgevoerde installatie staat
+> as-built in SETUP.md; de actuele snelroute is `scripts/setup.sh` (bevroren pins). De
+> omgevingen hieronder wijken op punten af van wat gebouwd is (o.a. geen NeMo-container
+> nodig gebleken; het huidige `venvs/vox` ≠ "Environment B/C" hier).
+
 
 > Run in order. Everything is pinned. Steps marked **[UNVERIFIED]** must be validated on-machine (see §8 for the matching test). Directory layout: `~/venvs/*` for Python envs, `~/data` for corpora, `~/src` for source builds.
 
@@ -253,6 +280,10 @@ cd python && pip install .        # into whichever venv needs GPU faster-whisper
 
 ## 5. Dutch evaluation data plan
 
+> ⚠ **Uitgevoerd.** De as-built stand van alle datasets (incl. CGN geleverd 2026-07-21 en
+> VoxPopuli bewust vervallen) staat in DATASETS.md; hieronder het oorspronkelijke plan.
+
+
 ### Download today (in this order)
 
 **1. IFADV — IFA Dialog Video corpus (PRIMARY conversational eval: DER + speaker-attributed WER).**
@@ -285,13 +316,13 @@ fleurs_test = load_dataset("google/fleurs", "nl_nl", split="test")
 ```
 
 **4. Common Voice Dutch (clean WER, crowd-read).**
-Official Mozilla releases moved to the **Mozilla Data Collective** in Oct 2025; the HF `mozilla-foundation/*` repos froze at v17.0 (residual gating of v17 files on HF: unconfirmed). Scriptable route: ungated CC0 community mirror **`fsicoli/common_voice_22_0`**, config `nl` (Dutch hour count not broken out on the card — confirm after download).
+Official Mozilla releases moved to the **Mozilla Data Collective** in Oct 2025; the HF `mozilla-foundation/*` repos froze at v17.0 (residual gating of v17 files on HF: unconfirmed). Scriptable route: ungated CC0 community mirror **`fsicoli/common_voice_22_0`**, config `nl`. *(⚠ Snippet hieronder werkte NIET op datasets 5.0 — de werkende legacy-route staat in DATASETS.md/PROGRESS 2026-07-17.)*
 
 ```python
 cv_test = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 ```
 
-**5. VoxPopuli Dutch (formal-domain WER + long-form non-overlapping diarization probe).**
+**5. VoxPopuli Dutch — ⚠ VERVALLEN 2026-07-23 (bewust niet gebruikt; rationale in DATASETS.md).**
 `facebook/voxpopuli`, config `nl`, CC0: 53 transcribed hours, 221 speakers, per-speaker paragraphs split into ≤20 s utterances with `speaker_id`.
 
 ### Request now (lead time: days–weeks)
@@ -322,6 +353,10 @@ cv_test = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 
 ## 6. Evaluation methodology
 
+> ⚠ **Geïmplementeerd.** De geldende methodologie (normalizer v1 in dialib, splits,
+> metriek-details) staat in EVALUATION.md; hieronder het oorspronkelijke ontwerp.
+
+
 **Headline metrics (in priority order):**
 1. **cpWER** (concatenated-minimum-permutation WER) on IFADV — the single number that captures "right words attributed to the right speaker" for the whole system. Engine: **meeteval**.
 2. **WER** on MLS-nl test + FLEURS nl_nl test (clean ASR quality, literature-comparable). Engine: jiwer / meeteval.
@@ -343,6 +378,12 @@ cv_test = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 
 ## 7. Accuracy improvement roadmap (ordered, with expected impact)
 
+> ⚠ **Afgewerkt.** Stappen 1–7 zijn uitgevoerd/gemeten (uitkomsten: COMPARISON.md,
+> CGN-VALUE.md; verwachting bij stap 2 kwam NIET uit — de kandidaten verloren). Stap 8
+> (Qwen3-ASR) bewust niet gedaan: geen gepubliceerde NL-WER en lage verwachtingswaarde
+> na de basisrace-uitslag.
+
+
 1. **Establish baselines (week 1).** WLK + whisper large-v3 + Sortformer@1.04 s on IFADV/MLS/FLEURS; offline canary-1b-v2 + pyannote community-1 as ceilings. *Impact: defines the gap we're closing; zero risk.*
 2. **ASR engine bake-off (week 2).** Voxtral-Realtime (480 ms) vs whisper large-v3/turbo (SimulStreaming, `--frame-threshold` sweep) vs parakeet-tdt-0.6b-v3 (chunk sweep 0.5–2 s in NeMo). Expected: Voxtral or parakeet beats streamed Whisper on the latency/WER curve (offline evidence: 7.07/7.48 vs Whisper ~8–10 % Dutch). *Impact: likely 1–3 WER points and/or 2–4× latency reduction.*
 3. **Diarization bake-off on Dutch.** Sortformer v2 vs v2.1 vs diart (CPU) vs pyannote-offline on IFADV. Sortformer's English-training penalty on Dutch is the single biggest unknown; if DER is bad, diart (language-independent) may win despite worse English benchmarks. *Impact: unknown until measured — potentially the largest DER lever.*
@@ -355,6 +396,10 @@ cv_test = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 ---
 
 ## 8. Risks & open questions → concrete on-machine tests
+
+> ⚠ **Alle risico's afgesloten of bewust onbeslist gelaten** — zie de addenda bovenaan
+> (R1/R2/R7/R10/R11: dag 1; R3/R4/R5: Addendum 2). Buiten de addenda om: **R8** (unified-memory-OOM) is op 2026-07-21 daadwerkelijk opgetreden → incidentregel in CLAUDE.md; **R12** (browser-audiopad) is in de praktijk opgelost (PCM-uitlijnfix + HTTPS :8443, PROGRESS 2026-07-23). Tabel blijft staan als checklist-historie.
+
 
 | # | Risk / unknown | Concrete test |
 |---|---|---|
@@ -385,7 +430,7 @@ cv_test = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 | `mistralai/Voxtral-Mini-4B-Realtime-2602` | ~4B (3.4B LM + 0.97B enc) | 7.07 % @480 ms delay | n/a | ✓ **native** (delays: multiples of 80 ms in 80–1200 ms, + 2400 ms) | Apache-2.0 | transformers≥5.2 path OK; vLLM via cu130-nightly image (validated on Spark, model-specific run UNVERIFIED) |
 | `nvidia/parakeet-tdt-0.6b-v3` | 600M | 7.48 % | 12.78 % | ✓ chunked/buffered (NOT cache-aware; ~4 s algorithmic at defaults, tunable) | CC-BY-4.0 | **Confirmed** ~282.9× RTFx on GB10 (NGC PyTorch 25.10) |
 | `openai/whisper-large-v3` (+ SimulStreaming) | 1.55B | ~8–10 % (varies by benchmark; Canary paper cross-avg ~9.9 %) | — | via AlignAtt/LocalAgreement wrapper | MIT | ✓ pure-PyTorch cu130; WLK Spark issues #276/#284 were wheel-selection problems, closed |
-| `openai/whisper-large-v3-turbo` | 809M | slightly worse than large-v3 | — | same wrappers | MIT | same |
+| `openai/whisper-large-v3-turbo` | 809M | slightly worse than large-v3 *(⚠ achterhaald: gemeten wint turbo live op alle metrieken — Addendum 3 / COMPARISON.md Update 2)* | — | same wrappers | MIT | same |
 | `Qwen/Qwen3-ASR-1.7B` / `-0.6B` | 1.7B/0.6B | **no published Dutch WER** | — | ✓ causal/streaming backends in WLK | Apache-2.0 | vLLM variant OK via cu130-nightly; timestamps need separate ForcedAligner model |
 | `pevers/whisperd-nl` (CGN FT) | 1.55B | — (16.42 % on own disfluency-rich eval) | — | via wrappers | (check card) | as whisper |
 | `yuriyvnv/whisper-large-v3-high-mixed-nl` | 1.55B | — | **20.29 %** (vs 4.43 % CV17) | via wrappers | (check card) | **avoid** — read-speech overfit |

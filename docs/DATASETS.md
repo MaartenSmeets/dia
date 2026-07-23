@@ -26,7 +26,7 @@ The primary "curated Dutch audio with per-speaker transcriptions" for this proje
 | Dataset | HF id / config | Split(s) we use | License | Purpose |
 |---|---|---|---|---|
 | FLEURS Dutch | `google/fleurs` / `nl_nl` | test (~350 sent.) | CC-BY-4.0 | Literature anchor: published Dutch WERs (canary 6.12 %, Voxtral 7.07 %, parakeet 7.48 %) are FLEURS-based |
-| MLS Dutch | `facebook/multilingual_librispeech` / `dutch` | test + dev (12.76 h each) | CC-BY-4.0 | Headline clean WER; train split (1554 h) = main fine-tune corpus later |
+| MLS Dutch | `facebook/multilingual_librispeech` / `dutch` | test + dev (12.76 h each) | CC-BY-4.0 | Headline clean WER; train split: 60 h-subset gebruikt in de M1/M3-fine-tunes (data/ft/, zie PROGRESS 2026-07-21) |
 | Common Voice NL | `fsicoli/common_voice_22_0` / `nl` (ungated CC0 mirror; official Mozilla moved to Mozilla Data Collective 2025-10, HF originals froze at v17). **Note:** script-based dataset → needs the legacy loader: `venvs/cvdl` (datasets==2.21.0) + `scripts/download_cv_legacy.py`; exported 1000-utt seeded test subset (1.36 h) on 2026-07-17 | test (1000 seeded) | CC0 | Crowd-read WER; **fine-tune caution:** CV-only fine-tunes overfit read speech (RESEARCH §7.6) |
 | VoxPopuli NL | `facebook/voxpopuli` / `nl` | — | CC0 | **BEWUST VERVALLEN (2026-07-23):** rol was formeel-domein-WER-anker, maar de modelkeuze is inmiddels beslist op eigen conversationele sets (COMPARISON.md Update 4), formeel/voorgelezen is al gedekt door FLEURS+MLS+CV, en VoxPopuli-NL-transcripten zijn bekend rommelig. Heropenen alleen als er een formeel-domein-use-case bijkomt. |
 
@@ -38,11 +38,15 @@ mls    = load_dataset("facebook/multilingual_librispeech", "dutch", split="test"
 cv     = load_dataset("fsicoli/common_voice_22_0", "nl", split="test")
 ```
 
-## Priority 3 — CGN (requires signed license; **user action, file early**)
+## Priority 3 — CGN (geleverd 2026-07-21 onder NC-licentie; ingest afgerond)
 
 - **What:** Corpus Gesproken Nederlands — ~900 h spoken Dutch (NL + Flanders). Component **comp-a: ~925 face-to-face spontaneous conversations, 2–5 speakers, ~99.5 h** — the gold standard for spontaneous Dutch conversation; also prime fine-tune material.
-- **Access (verified 2026-07-15, account created + order kit downloaded):** een eigen account op taalmaterialen.ivdnt.org kan downloaden: the **order kit** from the product page (`?wpdmdl=1290`) — saved to `data/cgn/order/`: `Bestelinstructies_OrderInstructions.docx` + license agreement (`Licentie-NC_CGN.docx` NL / `Licence-NC-CGN_ENG.docx` EN).
-- **Process:** print the license → fill out completely → sign → email a scan to **servicedesk@ivdnt.org** (or post: Instituut voor de Nederlandse Taal, Postbus 9515, 2300 RA Leiden). INT then replies with a download link to **BP_CGN_NC.zip (~96 GB, v2.0.3)**. When the link arrives, paste it into a session and the download can be automated (disk headroom is sufficient).
+- **Status (as-built):** licentie getekend en corpus geleverd (v2.0.3, ~93 GB) en
+  geïngest: comp-a → `cgn_a_dev/test` en comp-c/d (telefoon) → `cgn_tel_dev/test` via
+  `scripts/cgn_to_seglst.py` (audit-gefilterde splits; referenties in `eval/references/`).
+- **Zelf aanvragen:** via taalmaterialen.ivdnt.org (orderkit op de productpagina;
+  ondertekende licentie mailen naar servicedesk@ivdnt.org, INT stuurt de downloadlink;
+  download daarna via `scripts/download_cgn.sh` met de linkparameters in `.env`).
 - **Value assessment / commercial-license decision:** see **[CGN-VALUE.md](CGN-VALUE.md)** — the concrete experiment matrix (fine-tune with vs without CGN, scored on held-out conversational Dutch) that produces the accuracy delta the commercial license would buy, plus the proposed ≥3-cpWER-point decision rule.
 - **⚠ LICENSE SCOPE (read carefully):** this is the **NON-COMMERCIAL** edition. Key terms extracted from the agreement: licensee is a *natural person*, for *personal research*; commercial use is explicitly prohibited; "New Products" developed using it may NOT be made public, sold, or provided to third parties, and the Product may not be recognizably included in them. **Consequence: NC-CGN is fine for internal evaluation/benchmarking, but fine-tuning a model that ships in a commercial product is NOT covered.** For that, use the separate commercial edition: https://hdl.handle.net/10032/tm-a2-d9 — or keep fine-tuning on CC-licensed data (MLS CC-BY-4.0, CommonVoice CC0) and use CGN strictly for evaluation.
 

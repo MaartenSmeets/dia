@@ -4,28 +4,31 @@
 
 | Metric | Tool | Used on | Meaning |
 |---|---|---|---|
-| **cpWER** (headline) | meeteval `cpwer` | IFADV (multi-speaker) | Word errors under the best speaker permutation — "the right words attributed to the right speaker". The single number that captures the whole diarized-transcription task. |
+| **cpWER** (headline) | meeteval `cpwer` | IFADV + CGN (multi-speaker) | Word errors under the best speaker permutation — "the right words attributed to the right speaker". The single number that captures the whole diarized-transcription task. |
 | WER | jiwer | all sets | Speaker-agnostic word errors over time-sorted concatenated text. On overlapping conversation the concatenation order is ambiguous — treat IFADV WER as indicative only; FLEURS/MLS WER is exact. |
-| **DER** | meeteval `md_eval_22`, collar 0.25 s, all regions (overlap included) | IFADV | Diarization quality alone (missed + false-alarm + confused speaker time) / scored speech time. |
-| Latency | session `events.jsonl` + WLK lag fields | streaming runs | Partial/finalization lag; full word-emission latency analysis uses IFADV `.awd` word timestamps (planned). |
+| **DER** | meeteval `md_eval_22`, collar 0.25 s, all regions (overlap included) | IFADV + CGN | Diarization quality alone (missed + false-alarm + confused speaker time) / scored speech time. |
+| Latency | session `events.jsonl` + WLK lag fields | streaming runs | Partial/finalization lag; full word-emission latency analysis uses IFADV `.awd` word timestamps (gemeten — zie §Latency hieronder). |
 
 **Normalization:** both reference and hypothesis pass through `dialib/normalizer.py` (**v1**, tests in `tests/test_normalizer.py`): lowercase, NFKC, punctuation stripped (Dutch clitic apostrophes kept: `'k`, `d'r`), digits→Dutch words (num2words), hesitation fillers + IFADV non-lexical tokens (`xxx`, `ggg`) removed from both sides. Never change silently — bump the version and re-run baselines (`eval/rescore.py` re-scores stored hypotheses without re-running pipelines).
 
 **Formats:** canonical = SegLST JSON (meeteval-native). References in `eval/references/`, run outputs in `eval/results/<stamp>-<method>-<manifest>/` with `config.json` (engine flags, model, normalizer version) for reproducibility.
 
-**Splits:** IFADV dev (10 dialogues) for tuning; IFADV **test (10 dialogues) is held out — never tune on it**. Fixed manifests in `eval/manifests/`.
+**Splits:** IFADV dev (10 dialogues) for tuning; IFADV **test (10 dialogues) is held out — never tune on it**; idem cgn_a en cgn_tel dev/test. Fixed manifests in `eval/manifests/`; herkomst en licenties van alle sets: [DATASETS.md](DATASETS.md).
 
 ## Methods compared (see docs/COMPARISON.md for the verdict)
 
 1. `wlk-stream` — the live pipeline at realtime pace: whisper large-v3 (SimulStreaming/AlignAtt) + streaming Sortformer diarization. What a live meeting user experiences.
-2. `wlk-fast` — same pipeline, unpaced. The "after-the-fact upload" mode (m4a etc.). Quality ≈ wlk-stream, wall-clock ≈ 0.45× audio duration on this machine.
+2. `wlk-fast` — same pipeline, unpaced. Degradeert op lange audio (COMPARISON.md verdict 4) — alleen voor functionele checks; uploads gebruiken de offline pijplijn.
 3. `whisper-longform` — classic offline whisper large-v3 sequential long-form decode, **no diarization** (the user's requested baseline). Cannot answer who-said-what: cpWER degenerates (all words on one speaker).
-4. `whisper-longform+pyannote` — offline ASR + pyannote community-1 offline diarization + max-overlap word attribution. The offline quality ceiling for diarized transcription. *Blocked until the HF gating for pyannote is accepted.*
-5. (Planned) parakeet-tdt-0.6b-v3 / canary-1b-v2 via NeMo container — RESEARCH.md §7.2.
+4. `whisper-longform+pyannote` — offline ASR + pyannote community-1 offline diarization + max-overlap word attribution. De offline referentiemethode voor diarized transcription.
+5. parakeet-tdt-0.6b-v3 / canary-1b-v2 / Voxtral-Mini-3B offline — **gemeten, alle verliezen van M2** (COMPARISON.md Update 4; scripts: eval/score_nemo.py, scripts/vox_bakeoff.sh).
 
 ## Results
 
-**See [COMPARISON.md](COMPARISON.md) for the full method comparison and verdict** (2026-07-15 baselines). Headlines: offline whisper+pyannote is the quality ceiling (IFADV-dev pooled WER 30.1% / cpWER 44.7% / DER 21.4%); the live streaming pipeline costs ~5 WER pts vs offline on conversations; diarization-free long-form whisper fails the who-said-what task (cpWER 87.3%); conversational Dutch is ~4× harder than read speech (30.1% vs 7.3% offline WER); unpaced "fast" streaming degrades long-audio ASR (demoted to functional checks — uploads use the offline pipeline instead).
+**Alle resultaten staan canoniek in [COMPARISON.md](COMPARISON.md)** — begin daar bij de
+"Eindstand"-tabel bovenaan. Hier geen cijfers gedupliceerd (drift-risico); blijvend geldige
+kernles: diarization is geen optie maar een voorwaarde (cpWER 87,3% zonder vs 44,7% mét,
+zelfde ASR-uitvoer), en conversationeel Nederlands is ~4× moeilijker dan voorgelezen spraak.
 
 ## Latency — woordniveau-emissielatentie (gemeten 2026-07-23)
 
@@ -69,9 +72,5 @@ venvs/wlk/bin/python eval/score_nemo.py --model nvidia/canary-1b-v2 --manifest i
 bash scripts/vox_bakeoff.sh                                     # Voxtral: 2 fasen (venvs/vox + venvs/wlk), hervat-baar
 venvs/wlk/bin/python scripts/score_lora.py --adapter models/lora/M2-cgn --manifest cgn_tel_dev --tag M2w
 
-# Samenvattings-eval (SUMMARY-EVAL.md; v4-protocol = labelhernoeming + degeneratie-guards;
-# LLM-server MOET zonder prefix-caching draaien, zie OPS-LLM.md VALKUIL 2):
-venvs/wlk/bin/python eval/summary_eval.py --manifest ifadv_dev --limit 6 \
-  --live-run <wlk-stream-run> --offline-run <longform-run> --offlineD-run <longform+pyannote-run> \
-  --fused-run <merged-liveturns-offwords-run>
+# Verslag-eval: runprotocol staat canoniek in SUMMARY-EVAL.md §How to run
 ```

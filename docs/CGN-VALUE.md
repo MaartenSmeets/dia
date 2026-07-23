@@ -6,24 +6,25 @@
 
 The **NC license we have** already covers everything *evaluative*: benchmarking, tuning configs, model selection — none of that ships CGN content. The **commercial license** is only needed for one thing: **shipping a model fine-tuned on CGN** in een commercieel product. So its value equals: *(accuracy of a CGN-fine-tuned model) minus (accuracy of the best model we can ship without it)* — measured on realistic conversational Dutch. That delta is what the experiments below produce. Commercial pricing is quote-based: request via the [commercial product page](https://hdl.handle.net/10032/tm-a2-d9) / servicedesk@ivdnt.org — get the quote in parallel so both sides of the cost/benefit are known.
 
-## What we already know (priors, before any fine-tuning)
+**Uitkomst (gemeten, 2026-07-22/23): zie §VERDICT en §Waarde per use case verderop** — de
+priors hieronder zijn de onderzoeksbasis, niet de conclusie.
 
-- Our current best *shippable* live stack (whisper large-v3-turbo streamed + Sortformer, zero fine-tuning): **WER 25.0% / cpWER 32.2%** on IFADV-dev conversations (COMPARISON.md Update 2). Offline shippable ceiling (whisper large-v3 + pyannote): WER 30.1% / cpWER 44.7%.
-- The read-speech ↔ conversation gap is a factor ~4 (7.3% FLEURS vs 30% IFADV WER, same model): **the missing accuracy on conversations is a domain problem — exactly what CGN's 99.5 h of spontaneous multi-party speech (comp-a) targets.**
-- Literature/HF priors that CGN fine-tuning works: `pevers/whisperd-nl` (whisper fine-tuned on CGN) exists and targets disfluency-faithful transcription; the JASMIN fine-tuning paper (arXiv:2502.17284) shows Dutch-domain fine-tuning gains. Counter-prior: CV-only fine-tunes *hurt* out-of-domain (yuriyvnv: 4.4% on CV but 20.3% on MLS) — gains depend on training-domain match, which is CGN's whole argument.
-- Nothing published isolates "CGN-FT vs permissive-FT for conversational Dutch" — hence measuring it ourselves.
+## What we already know
 
-*(The quick priors above are superseded by the researched section below.)*
+Gemeten uitgangspunten: zie [COMPARISON.md](COMPARISON.md); literatuurpriors: §Published
+priors hieronder. *(De oorspronkelijke korte priors-lijst is vervangen door die sectie.)*
 
-# Published priors (researched 2026-07-21)
+
+
+## Published priors (researched 2026-07-21)
 
 *Replaces/expands the informal priors in the section above. All figures below are single-channel WER unless stated; none is cpWER. Every cross-comparison is gated by the normalization caveat in the next paragraph — read it before using any number.*
 
-## Read this first: the normalization caveat that invalidates most naive comparisons
+### Read this first: the normalization caveat that invalidates most naive comparisons
 
 CGN orthographic transcripts are **verbatim**: they keep filled pauses and disfluencies (uh, uhm), and CGN encodes laughter as `ggg`, long laughter as `ggggg`, and unintelligible speech as `xxx` (confirmed from the whisperd-nl README). Our normalizer v1 **strips fillers and maps digits→words**, i.e. it scores a *cleaned* reference. A cleaned WER is **substantially lower** than a verbatim WER on the same audio, because the filler/repair/non-speech tokens that get removed are exactly the ones a model most often gets wrong. Published CGN WERs mix both conventions and usually do not state which. **Therefore: do not treat any published CGN WER as a target to match unless its scoring matches ours.** The single most-cited CGN fine-tune (whisperd-nl, 16.42%) is deliberately verbatim-plus-tags and is *not* comparable to our numbers.
 
-## 1. Published WERs on CGN / spontaneous Dutch
+### 1. Published WERs on CGN / spontaneous Dutch
 
 "Comparable?" flags whether the number can be lined up against our cleaned-normalizer WER. "Verbatim" = fillers/tags scored (lower-bound-breaking, not comparable). "Read-clean" = scored on an already-clean read corpus (different domain). "Undoc." = scoring not documented.
 
@@ -41,11 +42,11 @@ CGN orthographic transcripts are **verbatim**: they keep filled pauses and disfl
 
 Zero-shot Dutch read-speech anchors (context): FLEURS multilingual avg ~10% for large-v3; Dutch read (FLEURS/CV/MLS) zero-shot large-v3 lands ~7–13%. **Consistent with our FLEURS-nl 7.3%.** There is **no clean published absolute WER for Whisper large-v2/v3 zero-shot on CGN comp-a specifically** — our M0-on-comp-a will be a novel data point.
 
-## 2. Dutch dialect / variant fine-tune findings — and the initiative search
+### 2. Dutch dialect / variant fine-tune findings — and the initiative search
 
-**Geïdentificeerd (update 2026-07-22): het gezochte initiatief is een Nederlands overheidsprogramma voor een soeverein publiek NL-spraakmodel** (incl. dialecten en juridisch jargon). **Status: planvorming — geen downloadbaar model.** Bij een modelrelease direct benchmarken op onze eval-sets; details en bronnen in docs-intern/.
+**Geïdentificeerd (update 2026-07-22): het gezochte initiatief is een Nederlands overheidsprogramma voor een soeverein publiek NL-spraakmodel** (incl. dialecten en juridisch jargon). **Status: planvorming — geen downloadbaar model.** Publieke bron: de intentieverklaring van 3 juli 2026. Bij een modelrelease direct benchmarken op onze eval-sets.
 
-*(Eerdere notitie hieronder — "not found as fine-tune" — was correct voor zover het om bestaande modellen ging:)* **Het gezochte initiatief was NOT found as a Dutch dialect Whisper fine-tune.** Searched Web + HuggingFace model index. The only HF hit matching the string is an unrelated RVC voice-conversion model, an unrelated RVC voice-conversion model. If the term was a half-remembered handle, no matching Dutch ASR artifact exists as of 2026-07-21. **UNCERTAIN:** I cannot rule out a private/renamed repo, but nothing public matches.
+*(Eerdere zoektocht, 2026-07-21, blijft geldig voor bestaande modellen:)* er bestaat **geen publiek Nederlands dialect-ASR-artefact** dat aan de zoekopdracht voldoet (web + HuggingFace-modelindex doorzocht; dichtstbijzijnde echte artefacten zijn Friese whisper-small-fine-tunes). Een privé/hernoemde repo is niet uit te sluiten, maar niets publieks matcht.
 
 Closest actual Dutch-variant / non-standard fine-tunes and their gains:
 
@@ -57,7 +58,7 @@ Closest actual Dutch-variant / non-standard fine-tunes and their gains:
 
 Carried-over counter-prior from the previous draft of this doc (**UNCERTAIN — not re-verified in this pass**): a CV-only Dutch fine-tune (`yuriyvnv`) reportedly hit ~4.4% on CommonVoice but ~20.3% on MLS-nl — i.e. **CV-only FT hurt out-of-domain.** Directionally this reinforces the domain-match thesis but should be re-confirmed before citing externally.
 
-## 3. Predicted M2−M1 (CGN-FT minus permissive-FT), with reasoning
+### 3. Predicted M2−M1 (CGN-FT minus permissive-FT), with reasoning
 
 **There is no direct prior.** No published study isolates "permissive read-speech FT (M1) vs CGN-comp-a FT (M2) on held-out conversational Dutch" (this is a negative existence claim → **UNCERTAIN** but consistent with everything found; JASMIN-FT and comp-o-FT are the nearest analogues and neither runs this contrast). The estimate below is inference, not measurement.
 
@@ -80,17 +81,17 @@ Carried-over counter-prior from the previous draft of this doc (**UNCERTAIN — 
 
 **The gain collapses (M2−M1 → <3, possibly ~0) if:** (a) MLS+CV already cover enough Dutch register that comp-a adds little (the w2v2-nl "only ~2 pts" scenario); (b) LoRA capacity / 99.5h is too small to absorb spontaneous phenomena; (c) the cleaned normalizer removes comp-a's main advantage (disfluencies); (d) comp-a's multi-party register doesn't transfer to dyadic IFADV; (e) cpWER is diarization-dominated so AM improvements barely register; (f) large-v3-turbo's decoder LM-prior resists verbatim spontaneous output. Any two of these co-occurring likely sinks the ≥3 cpWER rule.
 
-## 4. Consistency check: are our measured numbers sane?
+### 4. Consistency check: are our measured numbers sane?
 
 - **Offline large-v3 IFADV 30.1% WER — GREEN.** Sits squarely inside published spontaneous/conversational Dutch: JASMIN conversational zero-shot 28–42% (row 8), N-Best CTS ~30–46% (row 5). No red flag.
 - **FLEURS-nl 7.3% — GREEN.** Matches read-speech literature (7–13% zero-shot large-v3; w2v2 read 10.4%; broadcast SSL 6.2–11.1%).
 - **cpWER 32.2% vs WER 25.0% (turbo live) — plausible.** The ~7-pt gap is diarization overhead; no published cpWER anchor exists for Dutch conversation, but the magnitude is unremarkable.
-- **RED FLAG — turbo-streamed (25.0%) is *better* than large-v3-offline (30.1%).** Two independent priors say this ordering is surprising: (i) Welzijn.AI (row 9) found large-v3-turbo (0.16) **worse** than large-v3 (0.12) on spontaneous Dutch — the opposite direction; (ii) turbo is the smaller/faster model and streaming usually *hurts* vs offline. Benign explanations exist: the two numbers are not a like-for-like head-to-head (different model, different decoding, offline uses pyannote + different segmentation, and large-v3 offline may hallucinate on conversation per Bălan row 4, while streaming chunking suppresses that). But because the ordering contradicts published turbo-vs-v3 behavior, **treat 25.0 vs 30.1 as not-yet-explained until M0 is run with identical base, normalizer, segmentation and test split.** This is exactly what the M0 anchor is for.
+- **RED FLAG — turbo-streamed (25.0%) is *better* than large-v3-offline (30.1%).** Two independent priors say this ordering is surprising: (i) Welzijn.AI (row 9) found large-v3-turbo (0.16) **worse** than large-v3 (0.12) on spontaneous Dutch — the opposite direction; (ii) turbo is the smaller/faster model and streaming usually *hurts* vs offline. Benign explanations exist: the two numbers are not a like-for-like head-to-head (different model, different decoding, offline uses pyannote + different segmentation, and large-v3 offline may hallucinate on conversation per Bălan row 4, while streaming chunking suppresses that). But because the ordering contradicts published turbo-vs-v3 behavior, **treat 25.0 vs 30.1 as not-yet-explained until M0 is run. **OPGELOST 2026-07-21: zie de M0-ankers (turbo>v3 bevestigd — ordering verklaard)** with identical base, normalizer, segmentation and test split.** This is exactly what the M0 anchor is for.
 - **Novel-territory note:** no published absolute zero-shot large-v3(-turbo) WER on CGN comp-a exists, so the M0-on-comp-a number cannot be cross-checked against literature — only bracketed. Expect **~25–35% cleaned** (bracketed by IFADV 30.1% and JASMIN conversational zero-shot 28–42%); landing far outside implies a normalization or segmentation bug.
 
 **Suggested sanity runs:** (1) zero-shot turbo on comp-a held-out, cleaned normalizer → expect 25–35%; (2) score `whisperd-nl` on our held-out comp-a **twice** — verbatim (should approach its ~16% regime) and with our cleaned normalizer — to measure the verbatim↔cleaned offset for CGN and make its number comparable to ours; (3) run M0 for turbo *and* large-v3 under identical conditions to resolve the 25.0-vs-30.1 ordering.
 
-## 5. Sources
+### 5. Sources
 
 - pevers/whisperd-nl — huggingface.co/pevers/whisperd-nl ; github.com/pevers/whisperd-nl (16.42% verbatim; large-v3 base; [S1]–[S4] tags; `ggg`/`ggggg`/`xxx`). **comp-a inclusion = INFERRED, not documented (UNCERTAIN).**
 - kul-speech-lab/whisper_large_CGN — huggingface.co/kul-speech-lab/whisper_large_CGN (9.616%; **Flemish CGN**; scoring undocumented).
@@ -109,7 +110,10 @@ Carried-over counter-prior from the previous draft of this doc (**UNCERTAIN — 
 
 *Provenance: 3-agent web research + verification pass, 2026-07-21; two verification chains failed structured output, so items are conservatively flagged UNCERTAIN inline — treat flagged numbers as leads, not facts.*
 
-## Experiment matrix (fills in as runs complete)
+## Experiment matrix
+
+*Dev-resultaten staan in de VERDICT-tabellen hieronder; de test-splitcellen blijven bewust
+leeg tot de herbevestigingsrun vóór een eventuele aankoop (beslisregel).*
 
 All fine-tunes: LoRA on whisper large-v3-turbo (the live default), identical recipe/steps/LR, only the data differs. Scored with normalizer v1 on three conversational test sets, cpWER via the live pipeline (turbo+Sortformer) and WER offline.
 
@@ -164,7 +168,7 @@ Secondary value (already usable under NC, no extra cost): CGN-test as an evaluat
 ### Conclusie & aanbeveling
 
 1. **De waarde van CGN-trainingsdata is bewezen** — groot en consistent op woordkwaliteit, en in de productpijplijn op het vergaderdomein ook boven de formele cpWER-drempel. De prior-voorspelling (+2..+8 WER; cpWER-verwatering door diarisatie) kwam exact uit, inclusief het instortscenario via de pyannote-route én de oplossing (fusie).
-2. **Commerciële licentie: gerechtvaardigd zodra CGN-getrainde gewichten in een commercieel product gaan** (call-center/vergaderproduct). **Timing-advies: offerte nu opvragen, tekenen nog niet.** Redenen: (a) intern gebruik onder NC levert de winst al voor evaluatie/demo/ontwikkeling; (b) het uitleverbare alternatief (M0-fusie) is op sprekermaten gelijkwaardig en alleen op woorden −5..−8 punten slechter; (c) de basisrace (canary e.a., loopt) en een eventuele release van het NL-overheidsspraakinitiatief kunnen de som veranderen; (d) de beslisregel is gehaald op n=4 — één herbevestiging op de held-out testsplit vóór aankoop is verstandig (draaiboek staat klaar).
+2. **Commerciële licentie: gerechtvaardigd zodra CGN-getrainde gewichten in een commercieel product gaan** (call-center/vergaderproduct). **Timing-advies: offerte nu opvragen, tekenen nog niet.** Redenen: (a) intern gebruik onder NC levert de winst al voor evaluatie/demo/ontwikkeling; (b) het uitleverbare alternatief (M0-fusie) is op sprekermaten gelijkwaardig en alleen op woorden −5..−8 punten slechter; (c) de basisrace is afgerond — alle publieke kandidaten verliezen ruim van M2 (COMPARISON.md Update 4); alleen een release van het NL-overheidsspraakinitiatief kan de som nog veranderen; (d) de beslisregel is gehaald op n=4 — één herbevestiging op de held-out testsplit vóór aankoop is verstandig (draaiboek staat klaar).
 3. **Belangrijkste accuracy-lever ná dit besluit is niet meer het akoestisch model maar de sprekertoewijzing** — de fusie-methode (nu productstandaard) en diarisatieverbetering leveren per punt investering meer cpWER op dan verdere AM-training.
 
 *Voorbehouden: enkelvoudige runs; n=4–12 per cel; ruisvloer ±1,5–3 pt gemeten; live-beurten in de fusietest kwamen van de M0-live-pass (identiek voor beide varianten, dus fair voor de delta).*
@@ -195,9 +199,9 @@ Secondary value (already usable under NC, no extra cost): CGN-test as an evaluat
 | Alternative shippable path | M1 (MLS 1554 h CC-BY-4.0 + CV CC0) — zero license cost |
 | Risk if skipped | if M2−M1 ≥ 3 pts, shipped product leaves that accuracy on the table |
 
-## Execution order (tracked as task #15)
+## Execution order — alle stappen uitgevoerd (zie PROGRESS.md 2026-07-21/22)
 
-1. CGN comp-a extraction + references + timeline audit *(in progress — download running)*.
+1. CGN comp-a extraction + references + timeline audit *(afgerond)*.
 2. M0 anchors on IFADV-test + CGN-test (cheap; also answers the eval-value question).
 3. LoRA recipe bring-up (one short run on MLS subset to validate the training loop on this machine).
 4. M1 → M2 → M3, identical recipes; score; fill the matrix; write the verdict in this file.

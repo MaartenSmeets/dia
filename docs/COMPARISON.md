@@ -1,12 +1,22 @@
 # COMPARISON.md — empirical method comparison for Dutch diarized transcription
 
-**Date:** 2026-07-15 · **Machine:** DGX Spark (GB10) · **Data:** IFADV-dev (10 real 15-min Dutch 2-person conversations) + FLEURS-nl test (read sentences) · **Metrics/normalization:** see EVALUATION.md (normalizer v1; pooled = total errors / total ref mass) · **Raw results:** `eval/results/2026 0715-*` (each with full config for reproduction).
+**Date:** 2026-07-15, updates t/m 2026-07-23 · **Machine:** DGX Spark (GB10) · **Data:** IFADV-dev (10 real 15-min Dutch 2-person conversations) + FLEURS-nl test (read sentences) · **Metrics/normalization:** see EVALUATION.md (normalizer v1; pooled = total errors / total ref mass) · **Raw results:** `eval/results/20260715-*` (each with full config for reproduction).
 
-## Verdict (TL;DR)
+## Eindstand (2026-07-23) — lees dit eerst
 
-1. **For who-said-what transcription, diarization is not optional — it's the difference between unusable and usable.** Plain whisper large-v3 long-form (the classic approach) achieves the best raw WER but **cpWER 87.3% / DER 46.2%** on real conversations: it structurally cannot attribute words to speakers. Adding diarization (pyannote) to the *same* ASR output halves both: **cpWER 44.7% / DER 21.4%**. That is the empirical proof requested.
-2. **After-the-fact uploads (m4a etc.): use the offline pipeline** — whisper long-form + pyannote is the best quality on every axis and runs ~10× faster than realtime. Now available in the app as upload mode "offline (best quality)".
-3. **Live/realtime: the WLK streaming pipeline is the only contender** (nothing else does live), and its ASR penalty vs offline is moderate (~5 WER pts on conversations). Its streaming diarization (Sortformer) is usually good (DER 12–18%) but collapsed on 1 of 2 realtime long-dialogue runs — the top tuning priority.
+| Rol | Winnaar (gemeten) | Kerncijfers (pooled) | Bewijs |
+|---|---|---|---|
+| Live | whisper-large-v3-turbo + Sortformer v2 | IFADV 25,0 WER / 32,2 cpWER / 14,1 DER | Update 2 |
+| Definitieve versie | **fusie**: live-beurten × offline-M2-woorden | IFADV 21,9 / 33,8 / 13,7 · CGN 28,1 / 41,3 / 14,5 | Update 3 |
+| Offline-motor | turbo + CGN-LoRA (M2) — wint de basisrace van canary/parakeet/Voxtral | 22,9 / 31,3 pooled WER (ifadv/cgn_a dev) | Update 4 |
+| Hybride gesprekken | geen aparte audiobehandeling nodig | schade +0,3 WER; DER onaangetast | Update 5 |
+| Woordlatentie live | — | p50 ~1,0 s / p90 ~1,35 s | EVALUATION.md §Latency |
+
+## Verdict dag 1 (2026-07-15 — deels achterhaald door de updates; zie eindstand hierboven)
+
+1. **For who-said-what transcription, diarization is not optional — it's the difference between unusable and usable.** Plain whisper large-v3 long-form (the classic approach) achieves the best raw WER but **cpWER 87.3% / DER 45.9%** on real conversations: it structurally cannot attribute words to speakers. Adding diarization (pyannote) to the *same* ASR output halves both: **cpWER 44.7% / DER 20.1%**. That is the empirical proof requested. *(blijvend geldig)*
+2. **After-the-fact uploads (m4a etc.): use the offline pipeline** — whisper long-form + pyannote is the best quality on every axis and runs ~10× faster than realtime. Now available in the app as upload mode "offline (best quality)". *(stand 07-15 — actueel: fusie/M2 winnen, zie Update 3/4)*
+3. **Live/realtime: the WLK streaming pipeline is the only contender** (nothing else does live), and its ASR penalty vs offline is moderate (~5 WER pts on conversations). Its streaming diarization (Sortformer) is usually good (DER 12–18%) but collapsed on 1 of 2 realtime long-dialogue runs — the top tuning priority. *(opgelost: sweep 8/8 stabiel, zie Update 1)*
 4. **Do NOT use unpaced "fast" streaming for long files:** feeding the streaming pipeline faster than realtime degrades ASR badly on long audio (WER 49.3% vs 35.0% paced). Kept only for functional checks.
 
 ## Results — IFADV-dev (real Dutch conversations, 2 speakers, pooled over 10 dialogues)
@@ -39,7 +49,7 @@ Per-dialogue offline ceiling (method D) spread: cpWER 30.9–67.7%, DER 8.4–38
 
 1. **Conversational Dutch is the real problem, not Dutch per se.** Offline WER: 7.3% read speech → 30.1% spontaneous conversation (disfluencies, backchannels, overlap). Any accuracy work must be validated on IFADV/CGN, not read-speech sets (this was predicted by research — now measured).
 2. **Pacing interacts with the streaming policy in opposite directions by audio length.** Long audio: unpaced ≫ worse (49.3% vs 35.0% WER — the AlignAtt policy gets starved and truncates aggressively). Short clips: unpaced slightly better (16.1% vs 22.2% — end-of-stream flush approximates offline decoding). Consequence: "fast streaming" is the wrong upload mode; offline is both faster AND better.
-3. **Streaming Sortformer on Dutch: promising but unstable on long dialogues.** Healthy runs: DER 12–18% (fast mode pooled 26.9% incl. worse dialogues; best dialogues ~12%) vs offline pyannote 21.4% pooled — competitive when it works. One realtime run collapsed to near-single-speaker. Hypotheses to test: diarization latency preset (0.32 s vs 1.04 s), Sortformer v2.1, interaction with server load during realtime pacing.
+3. **Streaming Sortformer on Dutch: promising but unstable on long dialogues.** Healthy runs: DER 12–18% (fast mode pooled 25.1% incl. worse dialogues; best dialogues ~12%) vs offline pyannote 20.1% pooled — competitive when it works. One realtime run collapsed to near-single-speaker. Hypotheses to test: diarization latency preset (0.32 s vs 1.04 s), Sortformer v2.1, interaction with server load during realtime pacing.
 4. **The word-attribution step matters:** method D's cpWER (44.7%) ≈ WER (30.1%) + ~14 pts attribution/diarization cost. Better attribution (pyannote "exclusive" mode, finer ASR segmenting before assignment) is a cheap improvement lever for the offline path.
 
 ## Decisions taken (as implemented)
@@ -152,18 +162,15 @@ dropouts, galm/ver-veld) zijn niet getest — de synthetische-set-generator
 (`scripts/make_hybrid_ifadv.py`) staat klaar om die escalatie te meten zodra er
 aanleiding is.
 
-## Open experiments (ordered by expected impact — tracked in PLAN.md Phase 5)
+## Open experiments — ALLE AFGESLOTEN (2026-07-23)
 
-1. Streaming-diarization stability: 5× repeat runs on IFADV-dev, both Sortformer latency presets, v2 vs v2.1 → pick stable config (biggest live-quality lever).
-2. AlignAtt `--frame-threshold` sweep + `large-v3-turbo` → close the live 35%→30% WER gap / cut latency.
-3. Voxtral-Mini-4B-Realtime pilot (natively streaming, Dutch FLEURS 7.07% claimed) — potential step-change for live WER.
-4. canary-1b-v2 offline (NeMo container) — potential step-change for the offline ceiling (6.12% FLEURS-nl claimed; expect the conversational gap to persist but shrink).
-5. Word-emission latency measurement on IFADV `.awd` word timestamps (harness logs are already captured per session).
-6. After CGN license: re-baseline + LoRA fine-tune on spontaneous Dutch.
+1–2: gedaan (Update 1: stabiliteit ok, turbo gepromoveerd). 3: bewust vervallen
+(Update 4, conclusie 4). 4: gemeten, verliest (Update 4). 5: gemeten
+(EVALUATION.md §Latency). 6: gedaan (CGN-VALUE.md VERDICT). Nieuw werk: PLAN.md.
 
 ## Caveats (read before quoting these numbers)
 
-- Single runs (except DVA1A twice); realtime method on only 2 dialogues so far; no significance testing. Repeat-run variance is demonstrably nonzero (finding 3).
+- *(geldt voor de dag-1-tabel)* Single runs (except DVA1A twice); realtime on 2 dialogues. Actuele ruisvloer, gemeten via herhaalruns: ±3 WER / ±1,5 DER pt — kleinere deltas zijn ruis. Repeat-run variance is demonstrably nonzero (finding 3).
 - WER on overlapping conversation is order-ambiguous (time-sorted concatenation); cpWER is the metric that matters on IFADV.
 - pyannote ran blind (no `num_speakers=2` hint) for fairness vs Sortformer; giving the hint would likely improve method D further on known-2-speaker audio.
 - All numbers use normalizer v1 (fillers/backchannel tokens stripped from both sides; digits→Dutch words). Different normalization = incomparable numbers.

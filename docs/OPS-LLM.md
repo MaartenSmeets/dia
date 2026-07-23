@@ -1,7 +1,7 @@
 # OPS-LLM.md — runbook lokaal taalmodel (samenvatter)
 
-*Voor wie de samenvattings-LLM moet controleren, stoppen of vervangen. Conventies volgen
-de scripts in `~/tmp` (docker stop = container behouden; `--rm` alleen bij herconfiguratie).*
+*Voor wie het verslag-LLM moet controleren, stoppen of vervangen. Conventie: `docker stop`
+= container behouden; `--rm` alleen bij herconfiguratie.*
 
 ## Gezondheidscheck (30 seconden)
 
@@ -13,22 +13,7 @@ curl -s -m 30 http://localhost:8000/v1/chat/completions -H "Content-Type: applic
 - Timeout terwijl de GPU **druk** is (training/scoring) → verwacht gedrag op deze machine; wachten of batchwerk pauzeren.
 - Timeout terwijl de GPU **rustig** is → model gedegradeerd → herstart of wissel (hieronder).
 
-## Bekende zwakte huidige model (vlm-qwen36-moe, 35B-A3B MoE)
-
-De NGC-vLLM draait deze MoE op een **weight-only FP4-fallback** (marlin; opstartlog waarschuwt
-"no native FP4"). Gevolg: trage decode die onder elke GPU-druk als eerste verhongert; 2×
-degradatie/uitval gezien (2026-07-21 crash bij hoge util; 2026-07-22 onbereikbaar in stil venster).
-
-## Stoppen / herstarten (huidig model)
-
-```bash
-docker stop vllm-qwen36-moe      # stoppen, container blijft (snel te hervatten)
-docker start vllm-qwen36-moe     # hervatten (modelload ~10 min koud)
-docker restart vllm-qwen36-moe   # eerste remedie bij degradatie
-docker logs --tail 50 vllm-qwen36-moe
-```
-
-## Actieve setup sinds 2026-07-22 's nachts: AEON-image + AEON 27B NVFP4 (snel pad)
+## Actieve setup (sinds 2026-07-22): AEON-image + AEON 27B NVFP4 (snel pad)
 
 **Waarom:** de officiële NGC-image is niet volledig NVFP4 — hij rekent deels in BF16
 (marlin weight-only fallback) en is daardoor erg traag op de GB10 (bevestigd door
@@ -73,10 +58,19 @@ docker run -d --name vllm-qwen36-fast --gpus all --ipc=host \
   (gezien 2026-07-23 02:04). Container starten in een GPU-stil moment en daarna pas
   batchwerk aanzetten.
 - Zelfde poort (8000) en `--served-model-name qwen36` → **de app merkt niets van de wissel**.
-- Restart-policy bewust `no` (reboot-veiligheid, conform ~/tmp-conventie).
+- Restart-policy bewust `no` (reboot-veiligheid).
 - Terugdraaien: `docker stop vllm-qwen36-fast && docker start vllm-qwen36-moe`.
 
-### Terugvalopties (alleen als de AEON-setup problemen geeft)
+## Stoppen / herstarten (actieve container)
+
+```bash
+docker stop vllm-qwen36-fast      # stoppen, container blijft (snel te hervatten)
+docker start vllm-qwen36-fast     # hervatten (modelload ~10 min koud; start in GPU-stil venster!)
+docker restart vllm-qwen36-fast   # eerste remedie bij degradatie
+docker logs --tail 50 vllm-qwen36-fast
+```
+
+## Terugvalopties (alleen als de AEON-setup problemen geeft)
 
 1. **NGC MoE terug**: `docker start vllm-qwen36-moe` (traag maar bekend gedrag).
 
@@ -86,10 +80,23 @@ BF16-fallback-traagheid, en dense 27B heeft ~9× meer actieve parameters per tok
 MoE — verwacht lage tok/s; alleen inzetten om stabiliteit boven snelheid te kiezen.
 (Beter idee in dat scenario: hetzelfde officiële model op de AEON-image proberen.)
 
+### Bekende zwakte van de NGC MoE-terugvaloptie (vllm-qwen36-moe)
+
+De NGC-vLLM draait deze MoE op een **weight-only FP4-fallback** (marlin; opstartlog waarschuwt
+"no native FP4"). Gevolg: trage decode die onder elke GPU-druk als eerste verhongert; 2×
+degradatie/uitval gezien (2026-07-21 crash bij hoge util; 2026-07-22 onbereikbaar in stil venster).
+
+### Stoppen / herstarten van de MoE-terugvaloptie
+
+```bash
+docker stop vllm-qwen36-moe      # stoppen, container blijft (snel te hervatten)
+docker start vllm-qwen36-moe     # hervatten (modelload ~10 min koud)
+docker restart vllm-qwen36-moe   # eerste remedie bij degradatie
+docker logs --tail 50 vllm-qwen36-moe
+```
+
 ## Vuistregels op deze machine (GB10, unified memory)
 
-- Eén groot model tegelijk naast de transcriptie-app; vLLM ALTIJD met
-  `--gpu-memory-utilization ≤ 0.40` bij coexistentie (incident 2026-07-21: default 0.9 →
-  OOM-kill van lopende training).
-- LLM-afhankelijke batchstappen (samenvattings-evaluaties) plannen in GPU-stille vensters.
-- `nvidia-smi` toont geen bruikbaar geheugen op dit platform: gebruik `free -h`.
+- vLLM ALTIJD met `--gpu-memory-utilization ≤ 0.40` bij coexistentie met de app.
+- LLM-afhankelijke batchstappen (verslag-evaluaties) plannen in GPU-stille vensters.
+- Machinebrede geheugenregels (unified memory, free -h, OOM-incident): zie CLAUDE.md.

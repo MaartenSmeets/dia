@@ -1,93 +1,42 @@
-# PROGRESS.md — living journal (newest entry last; always read the whole file)
+# PROGRESS.md — levend journaal (nieuwste entry EERST; lees minimaal de actuele stand + de bovenste entries)
 
-Rules: after any meaningful step, append an entry: date · what was done · what was **verified** (actual command/output) · what's next / blocked on. Never delete entries; strike through only if actively misleading.
+Regels: na elke betekenisvolle stap een entry PREPENDEN direct onder het actuele-stand-blok: datum · wat gedaan · wat **geverifieerd** (echt commando/output) · wat volgt / waar het op wacht. Entries nooit verwijderen; alleen doorhalen als iets actief misleidt, met een gedateerde correctie erbij.
+
+## Actuele stand (bijgewerkt 2026-07-23)
+
+- **Product:** de app is feature-compleet en jurist-gericht (tabs Gesprek · Bestand · Archief · Instellingen; expertmodus voor Live/Evaluatie) met verslagsjablonen, sprekerrollen en versiebeheer. E2E-suite 30/30 groen. Repo publiek: <https://github.com/MaartenSmeets/dia>.
+- **Pijplijn (gemeten — COMPARISON.md §Eindstand):** live = whisper-large-v3-turbo + streaming Sortformer v2; definitieve versie = fusie van live-sprekerbeurten × offline-M2-woorden (turbo+CGN-LoRA, NC — intern gebruik); verslagen via een lokaal OpenAI-compatibel LLM (OPS-LLM.md).
+- **Meetprogramma afgerond:** basisrace (M2 wint), summary-eval v4 (sprekerlabels = ×3,5 attributie-accuratesse), telefoontransfer (−9,6 WER), woordlatentie ~1,0 s p50, hybride-vergadering (geen aparte opwaardering nodig).
+- **Open:** CGN-commerciële offerte is een gebruikersactie (CGN-VALUE.md §VERDICT); benchmark NL-overheidsmodel wacht op een externe release (watch op gebruikersverzoek uitgeschakeld).
 
 ---
 
-## 2026-07-15 — project start: research, decisions, environment bring-up
+## 2026-07-23 (nacht) — redactionele keuring van ALLE md-docs: ~150 bevindingen verwerkt, structuur + kruisverwijzingen consistent
 
-**Requirements fixed with user:** Dutch, fully local on DGX Spark; meetings 2–4 speakers; balanced latency (partials ≈2 s); inputs = browser mic (localhost + LAN), uploaded files incl. **m4a** (→ ffmpeg ingest + optional EBU R128 `loudnorm`); HF gated models OK (token in `.env`, mode 600, from user's `~/tmp` scripts).
-
-**Research done (12-agent verified web research, see RESEARCH.md + verification appendix):**
-- Stack decision: WhisperLiveKit 0.2.24 engine (Apache-2.0) + whisper large-v3 `--language nl` (SimulStreaming policy) + NVIDIA Streaming Sortformer v2 diarization (ungated CC-BY-4.0, ≤4 spk) as day-1 live pipeline; Voxtral-Mini-4B-Realtime / parakeet-tdt-0.6b-v3 / canary-1b-v2 as bake-off candidates; pyannote community-1 as offline diarization reference; meeteval+jiwer metrics, SegLST canonical format; IFADV as primary conversational eval corpus.
-- Platform facts: torch **cu130** aarch64 wheels are the only correct pip path (cp312 wheels exist up to torch 2.13.0 / torchaudio 2.11.0 / torchcodec 0.15.0 — checked the index directly today); CT2/faster-whisper aarch64 wheels are CPU-only; `nvidia-smi` memory column reads "Not Supported" on this platform (normal).
-- Known risk list R1–R14 in RESEARCH.md §8 — treat as the test checklist.
-- Gap: the "evaluation & metrics" research agent crashed (structured-output failure); its ground is mostly covered by §5/§6 of RESEARCH.md, but when building the eval harness, do a small focused check on: jiwer/meeteval exact APIs, Dutch normalizer details, whisper LoRA recipes. Noted as backfill work in Phase 4.
-
-**Machine verified:** GB10, aarch64, driver 580.159.03, CUDA 13.0, py3.12.3, docker+ffmpeg+node24, ~528 GB free, internet OK, venv creation OK.
-
-**In flight (background):**
-- `venvs/wlk` creation: torch==2.11.0+torchaudio==2.11.0+torchcodec==0.14.0 (cu130) + GPU smoke test, then `whisperlivekit[diarization-sortformer]==0.2.24`. (R1/R2/R7)
-- IFADV download from Zenodo (Annotations.zip + AudioWAV.zip 5.8 GB) → `data/ifadv/`.
-
-**Done today:** project skeleton; docs: README, CLAUDE.md, PLAN, DATASETS, RESEARCH (+appendix), this journal; HF token → `.env`.
-
-**Next:** finish env A install → GPU smoke test result recorded here → wlk --help verify flags → unzip+inventory IFADV → eval env (task #4) → HF datasets (task #5) → end-to-end go/no-go (task #6).
-
-## 2026-07-15 (later) — environment A verified, IFADV references built
-
-**R1 CONFIRMED (GPU on GB10 via pip wheels):** `venvs/wlk` = torch 2.11.0+cu130 / torchaudio 2.11.0+cu130 / torchcodec 0.14.0+cu130 (aarch64). `torch.cuda.is_available()==True`, `get_device_capability()==(12,1)`, arch list `[sm_80…sm_120]` (sm_121 absent is expected — sm_120 binaries run), GPU matmul finite. Note: install order left numpy out until WLK stage — harmless warning.
-
-**R2 CONFIRMED (native aarch64 pip install of the full chain):** `whisperlivekit[diarization-sortformer]==0.2.24` installed cleanly, no source-build failures. Key resolved versions: nemo-toolkit 2.7.3, transformers 4.57.6, faster-whisper 1.2.1 (+ctranslate2 4.8.1 wheel = CPU-only, irrelevant — we run `--disable-fast-encoder`), onnxruntime 1.27.0 (CPU), lightning 2.4.0, numpy 2.4.6, fastapi 0.139.0. NGC NeMo container fallback NOT needed for the live stack.
-
-**R7 PARTIALLY RESOLVED (flag drift found):** `wlk` is now a multi-command CLI (`serve|listen|run|transcribe|bench|diagnose|models|pull|rm|check`). **The language flag is `--lan`, NOT `--language`** — RESEARCH.md §4 command corrected here:
-`wlk serve --model large-v3 --lan nl --diarization --diarization-backend sortformer --disable-fast-encoder --host 0.0.0.0 --port 8000`
-Also available & relevant: `--backend-policy simulstreaming` (default policy), `--frame-threshold` (AlignAtt knob), `--beams/--decoder`, `--init-prompt/--static-init-prompt` (domain hotwords), `--ssl-certfile/--ssl-keyfile` (LAN mic), `--pcm-input`, `--api-token`, `--warmup-file`, `--min-chunk-size`, `--vac-chunk-size`, `--buffer_trimming`.
-
-**IFADV annotations converted (task #7 code done, validation pending audio):** `scripts/ifadv_to_seglst.py` (self-contained short-TextGrid parser incl. Praat trigraph decoding; variant selection Corr > plain > Shift > ORIGINAL/nodia, matches awd convention). All 20 dialogues → `eval/references/ifadv/{ID}.seglst.json,.rttm,.words.json`, zero warnings; 502–792 segments and ~9.5k–14.7k words per dialogue; per-speaker speech times plausible (high overlap is normal in free dialogue). Splits: `eval/manifests/ifadv_dev.json` (DVA1A,3E,6H,8K,10O,12S,14W,16AA,19AG,22AL) / `ifadv_test.json` (DVA2C,4C,7B,9M,11Q,13U,15Y,17AC,20AI,24AK — HELD OUT). Dialogue numbering has gaps (no 5,18,21,23) = 20-of-24-annotated, expected. Remaining validation once audio lands: channel-VAD cross-check + Praat spot-check (R10).
-
-**In flight:** IFADV AudioWAV.zip download (Zenodo is slow, wget -c resumable); `venvs/eval` pip install (task #4).
-
-## 2026-07-15 (evening) — END-TO-END PIPELINE WORKING; app built; first real metrics
-
-**New user requirements folded in today:** (1) uploads must support **m4a** + optional loudness normalization (implemented: ffmpeg ingest accepts anything, single-pass EBU R128 `loudnorm` toggle); (2) both **realtime streaming** and **after-the-fact upload** processing available (implemented: replay speed=1.0 vs speed=0 fast/unpaced); (3) an **empirical methods comparison document** incl. classic whisper-large long-form baseline, proving what the diarized pipeline adds → docs/COMPARISON.md (task #11), harness supports methods: wlk-stream / wlk-fast / whisper-longform / whisper-longform+pyannote.
-
-**Built and verified:**
-- `dialib/` — normalizer (Dutch, v1, tests pass), seglst helpers, metrics (jiwer WER + meeteval cpWER/DER; meeteval returns per-session dicts → combined; md-eval Decimals → float; inverted WLK intervals clamped).
-- `app/` — full experiment server + UI (see WEBAPP.md): live mic, file upload (m4a/loudnorm/fast-or-realtime), eval tab w/ side-by-side reference + WER/cpWER/DER, sessions + corrections editor, config tab w/ in-process engine reload. Server runs on :8080.
-- `eval/run_eval.py` harness + `eval/rescore.py`; results under eval/results/.
-- Engine load: cold 784 s (incl. 2.9 GB whisper download), warm ~20-60 s. Memory with engine resident: ~23 GiB / 121 GiB.
-- **Bugs found & fixed:** (1) `AudioProcessor.is_pcm_input` must be set before `create_tasks()` (else "FFmpeg read timeout" hang); (2) `ready_to_stop` must be sent when the results generator ends, not after client disconnect (deadlock with waiting clients); (3) WLK emits occasional end<start segments → clamped in dialib.
-- **IFADV audio complete** (5.6 GB, 48 wavs = 24 dialogues × DVA/DVB views, 48 kHz stereo 15:00). R10 validation: per-channel energy-VAD speech time consistent with reference magnitudes; exact channel↔speaker mapping fuzzy due to mic crosstalk (fine — metrics are permutation-invariant).
-- **First real numbers** (details in eval/results/):
-  - FLEURS-nl (2 samples, sanity): wlk-stream WER 10.3% pooled vs whisper-longform offline 6.9% — expected streaming penalty visible.
-  - IFADV DVA1A (15-min real conversation, fast mode): **WER 52.4% / cpWER 55.3% / DER 18.0%** — conversational Dutch is the real challenge (backchannels/overlap); DER 18% from English-trained streaming Sortformer on Dutch is decent. Transcript quality qualitatively good; WER on overlapping dialogue is order-ambiguous → cpWER is the headline metric.
-- HF eval sets: FLEURS-nl test (364) + MLS-nl test exported (wav + SegLST + manifests). CommonVoice blocked by datasets-5.0 script removal (parked; not blocking).
-
-**In flight:** `scripts/run_baselines.sh` background queue (~2.5 h): {wlk-fast, whisper-longform, wlk-stream} × {FLEURS-nl, IFADV-dev} → COMPARISON.md.
-
-**User actions still needed:**
-1. Accept pyannote gating: open https://huggingface.co/pyannote/speaker-diarization-community-1 (logged in as the .env token account) and accept conditions → unlocks method D (offline diarization reference).
-2. CGN license request (docs/DATASETS.md §CGN).
-3. Try the UI: http://localhost:8080 (mic on localhost); for LAN mic: scripts/make_cert.sh + run with --ssl.
-
-## 2026-07-15 (night) — baselines complete, COMPARISON.md written, offline upload mode shipped
-
-**pyannote gating accepted by user → method D unlocked and verified** (community-1 loads on CUDA in ~7 s; short-clip caveat: on a 60 s test clip it underclustered to 1 speaker — fine on full 15-min dialogues: 220–360 turns, DER 8–17% on the best dialogues).
-
-**All baselines done** (`scripts/run_baselines.sh` + chained `scripts/attribute_with_pyannote.py`; full tables + verdict in **COMPARISON.md**). IFADV-dev pooled: whisper-longform 30.1/87.3/46.2 (WER/cpWER/DER %), +pyannote 30.1/**44.7**/**21.4**, wlk-fast 49.3/57.3/26.9, wlk-stream (N=2) 35.0/62.5/32.7. FLEURS-nl: offline 7.3% (matches literature → harness validated), wlk-fast 16.1%, wlk-stream 22.2%.
-
-**Decisions implemented:**
-- Upload default = **offline pipeline** (whisper long-form + pyannote): new `scripts/offline_job.py` (eval venv subprocess), app endpoints `POST/GET /api/offline/*`, File-tab mode selector updated. Verified end-to-end with a 60 s **m4a + loudnorm** upload (job pipeline asr→diarize→attribute, ~50 s wall). Sessions from offline jobs appear in the Sessions tab (mode "offline") for correction.
-- Unpaced "fast" streaming demoted to functional checks (COMPARISON finding 2: 49.3% vs 35.0% WER on long audio).
-
-**Key open issue found:** streaming Sortformer collapsed to near-single-speaker in 1 of 2 realtime long-dialogue runs (DVA1A: 793/118 s split; healthy fast-mode run: 400/491 s). Top next experiment: 5× repeat stability sweep across Sortformer latency presets + v2.1.
-
-**Gotchas fixed today (already folded into SETUP.md):** eval venv needed num2words (dialib import) + openai-whisper for offline jobs.
-
-**Next up (ordered, see COMPARISON.md open experiments):** diarization stability sweep → frame-threshold/turbo sweep → Voxtral-Realtime pilot (separate venv) → canary-1b-v2 offline (NeMo container) → latency analysis from events.jsonl + IFADV .awd → CV-nl via parquet route → CGN when license arrives.
-
-## 2026-07-17 — engine-reload bug found+fixed; config sweep running; license prefilled; latency first-look
-
-**CRITICAL BUG FIXED:** WLK's `TranscriptionEngine` is a hard singleton — re-instantiating returns the OLD engine and silently ignores new config ("engine loaded in 0.0s" symptom). The app's `/api/config` reload (and Config tab) had therefore been a NO-OP. Fixed via the official `TranscriptionEngine.reset()` in `EngineManager.load` (app/server.py); verified reloads now really load (10–14 s warm) and flags take effect. **No prior results are tainted** — all COMPARISON.md baselines ran on the startup config.
-
-**Config sweep running** (`scripts/run_sweep.py`, log `eval/results/sweep_queue.log`, ~5 h): stability 3× repeats (realtime, DVA1A+DVA3E) → frame-threshold 15/40 → large-v3-turbo (+FLEURS-25) → Sortformer v2.1 2× repeats. Driver reconfigures the engine via `/api/config` per stage, restores default at the end, aborts if available memory <20 GB. Gotchas encountered: argparse needs `--tag=-x` form for tags starting with “-”; `app/engine_config.json` only exists after first config POST (driver falls back to `/health`).
-
-**Latency first-look** (`eval/latency_report.py`, from existing realtime IFADV sessions): result cadence ~10–12 Hz; finalization lag (line-level) p50 ≈ −0.5–0 s, p90 ≈ 5–8 s. Word-level emission latency vs `.awd` still open (#14). Short FLEURS clips give degenerate lag samples — use long dialogues only.
-
-**CGN license prep:** `data/cgn/order/Licentie-NC_CGN_INGEVULD.docx` prefilled (organisatie, e-mail, Bijlage-2 onderzoeksomschrijving) via `scripts/fill_cgn_license.py` (fills FORMTEXT display runs in-place; structure verified with python-docx). Remaining user fields + steps: `data/cgn/order/TODO_SIGNING.md`; email body: `MAIL_DRAFT.txt`. Signature must be the user's own.
-
-**CommonVoice-nl:** parquet revision doesn't exist for fsicoli v22 / mozilla v17 → legacy route worked: `venvs/cvdl` (datasets==2.21.0) + `scripts/download_cv_legacy.py` → 1000 utts / 1.36 h exported (manifest `cv22_nl_test.json`).
+**Op gebruikersverzoek ("alleen relevante inhoud, geen dubbelingen, niets in het verkeerde
+document; opbouw logisch, duidelijke referenties"):** twee workflowrondes (4 groepslezers +
+structuurlens ≈85 bevindingen; daarna een 5-groepen-kruisanalyse, 64 bevindingen) en alles
+doc-voor-doc toegepast. Hoofdlijnen:
+- **Eén canonieke plek per feit**, rest verwijst: alle meetuitslagen → COMPARISON.md (nieuwe
+  "Eindstand"-tabel bovenaan); machinefeiten/regels → CLAUDE.md; LLM-ops → OPS-LLM.md
+  (herordend: actieve setup eerst, MoE = terugvaloptie, typo's en ~tmp-verwijzingen weg);
+  datasets as-built → DATASETS.md (CGN geleverd i.p.v. besteltodo); summary-eval-runprotocol
+  → SUMMARY-EVAL.md (leeswijzer bovenaan, E-conditie in de ontwerptabel, v1-restanten weg).
+- **Verouderde adviezen gedateerd i.p.v. stilletjes laten staan** (nieuwe CLAUDE-regel):
+  RESEARCH.md kreeg Addendum 3 (turbo=live default, fusie=productiepad, CGN-waarde, latentie,
+  OOM-update) + ⚠-markers op achterhaalde rijen/secties (§2/§4/§5/§6/§7/§8); COMPARISON-proza
+  herscoord (45,9/20,1/25,1), open-experimentenlijst gesloten; PLAN.md statusblok.
+- **Dit journaal hersorteerd** naar nieuwste-eerst conform de nieuwe kopregel, met
+  actuele-stand-blok bovenaan; correctienotities toegevoegd (fonentelling dag 1, pre-rescore-
+  DER's 15-07, privérepo→publiek), gevoelige restanten geneutraliseerd (docs-intern-,
+  account-/portaaldetails, concurrentieduiding).
+- **WEBAPP.md**: tabset actueel (Gesprek/Bestand/Archief/Instellingen + expert), §Meetings
+  herordend (persistentie eerst), stale --ssl weg, testsectie = dekking i.p.v. momentopname.
+**Geverifieerd:** geautomatiseerde link-/§-verwijzingscheck over alle md's schoon (enige hit
+= WLK's eigen upstream-pad); geheimen-grep schoon (geen interne hostnaam, absolute paden, ~tmp- of
+docs-intern-verwijzingen meer in publieke docs). Open ter beoordeling gebruiker: OPS-LLM documenteert de as-built
+modelcontainer (community-AEON-image met "Uncensored"-modelnaam) — reputationeel wellicht
+liever het officiële nvidia/Qwen3.6-27B-NVFP4 op dezelfde image valideren.
 
 ## 2026-07-23 (avond, vervolg) — reproduceerbare installatie + Docker + volledige handleiding (taak #24)
 
@@ -128,11 +77,13 @@ agents + eigen integratieronde. Hoogtepunten:
   velden overleven de 30s-snapshot); streaming wav-write + to_thread (geen 230MB-reads in
   de event-loop); corrupte meta.json breekt lijsten niet meer; achtergrondtaken met
   referentie; LLM-timeouts → nette 504-melding. Verwijderen tijdens afronden geblokkeerd.
-**GitHub: privérepo https://github.com/MaartenSmeets/dia aangemaakt en gepusht** (gebruikersverzoek; MIT-licentie, publieksgerichte README; geheimen-scan vooraf schoon; corpora/modellen/geheimen buiten de repo). **Git-versiebeheer opgezet (gebruikersakkoord "doe maar"):** `git init` + eerste commit
-b683fc0 (79 bestanden: code + docs). `.gitignore` houdt bewust buiten de repo: geheimen
+**Git + GitHub (gebruikersakkoord "doe maar"):** `git init`, daarna repo
+https://github.com/MaartenSmeets/dia aangemaakt en gepusht (MIT-licentie, publieksgerichte
+README; geheimen-scan vooraf schoon). `.gitignore` houdt bewust buiten de repo: geheimen
 (.env, .ivdnt.json, certs/), gelicenseerde/grote data (data/ incl. CGN-NC, eval/references/,
-eval/audio/), modellen, venvs en eval/results (samengevat in docs/). Repo is lokaal; vóór
-een eventuele remote push eerst licenties heroverwegen (DATASETS.md).
+eval/audio/), modellen, venvs en eval/results (samengevat in docs/). Initieel privé;
+later dezelfde avond op gebruikersverzoek ("maak maar openbaar") publiek gemaakt na een
+extra gevoeligheids- en licentiescan.
 
 ## 2026-07-23 (avond) — gebruikersvraag "rol bevestigd maar zie spk1": weergave verbeterd
 
@@ -380,7 +331,7 @@ waren verder al bemoedigend (gold 6/6, C 5/6 na hernoeming — het remap-mechani
 - **Smart defaults**: LLM-autodetectie (startup + knop; pakt eerste model op lokale poorten — gevonden qwen36@8000), loudnorm standaard aan, expertmodus verbergt Evaluatie/engine-config.
 - **HTTPS voor mobiel**: TLS-proxy :8443 (alle host-IP's in SAN incl. Tailscale), run_app start hem mee; http-banner verwijst mobiele http-bezoekers door. run_app --ssl-bug gefixt.
 - **KRITIEKE LIVE-BUG (gevonden via gebruikerstest, bewezen gefixt)**: MediaRecorder startte vóór WS-open → eerste chunk (WebM-header!) weg bij trage TLS/LAN-handshake → geen transcript én onleesbare opname. Fix: start na ws.onopen; audio-only sessies blijven nu ook bewaard; conversiefouten gelogd; **nieuwe E2E-tests voor de live-WebM-route: 17/18 groen** (alleen summarize rood door GPU-verzadiging tijdens meetketen).
-- **NL-overheidsspraakinitiatief geïdentificeerd** (docs-intern/): overheidsinitiatief (intentieverklaring 3 juli 2026), géén model — concurrentieanalyse: geen productconcurrent, potentiële motorleverancier; wekelijkse release-watch (cloud-routine ma 09:00) + benchmark-draaiboek (taak #18).
+- **NL-overheidsspraakinitiatief nagetrokken**: er bestaat alleen een intentieverklaring (3 juli 2026), nog géén model — mocht er ooit een model verschijnen, dan gewoon meenemen in de bake-off-systematiek. (Release-watch later op gebruikersverzoek uitgeschakeld, zie 2026-07-23 avond.)
 - **Tweede-pass-architectuur (user req: live bijhouden + beste kwaliteit achteraf)**: vergaderingen krijgen na afloop automatisch een offline "definitieve versie" (refined_* artefacten NAAST live-versie): offline_job.py nu HF-turbo + optionele LoRA (default REFINE_ADAPTER=models/lora/M2-cgn — **NC-licentie: intern ok, commercieel pas na CGN-commercieel**) + pyannote + definitieve samenvatting; zichtbaar in Archief als "definitief transcript/samenvatting". **Motorkeuze wordt gemeten**: offline bake-off (canary-1b-v2, parakeet) staat gepland direct na de M-keten (`scripts/offline_bakeoff.sh`, wacht op FINAL_CHAIN_DONE); wint canary op conversatie, dan wordt die de refine-motor (NeMo zit al in wlk-venv).
 
 ## 2026-07-22 (daytime) — meeting mode shipped + tested; word-cpWER chain grinding
@@ -412,7 +363,7 @@ User asleep; standing orders: continue autonomously. In flight / queued, notific
 **Use case declared by user: call-center live summarization/diarization/transcription.** Implications logged in CGN-VALUE (a call-center product is commercial → CGN-trained adapters shipping there need the commercial license, sharpening the M-experiment stakes).
 
 - **CGN comp-c+d (telephone dialogues, 1,230 recordings, 12.8 GB) extracted** — the call-center acoustic proxy (narrowband 2-speaker). Next: adapt cgn converter for comp-c/d layout → `cgn_tel_dev/test` splits → baseline live stack + M-adapters on telephone audio.
-- **Summarization layer implemented in the app:** `POST /api/summarize` → any local OpenAI-compatible endpoint (`SUMMARIZER_URL`/`SUMMARIZER_MODEL` in .env; user's vLLM/qwen scripts in ~/tmp fit). Live tab: rolling summary button + 60 s auto; Sessions tab: summarize stored sessions. Dutch call-center prompt. NOTE: app not restarted yet (M-series owns the GPU) — restart to activate routes.
+- **Summarization layer implemented in the app:** `POST /api/summarize` → any local OpenAI-compatible endpoint (`SUMMARIZER_URL`/`SUMMARIZER_MODEL` in .env). Live tab: rolling summary button + 60 s auto; Sessions tab: summarize stored sessions. Dutch call-center prompt. NOTE: app not restarted yet (M-series owns the GPU) — restart to activate routes.
 - **Summary-quality experiment designed + implemented** (`docs/SUMMARY-EVAL.md`, `eval/summary_eval.py`): answers two user questions — live-vs-offline transcript as summary input, and **diarized vs non-diarized transcript → summary accuracy** (attribution-question judging against gold). Uses EXISTING eval transcripts (A/B/C/D/R conditions); runs when GPU is free + LLM endpoint up.
 
 ## 2026-07-21 (night) — M-series fine-tuning launched (task #15)
@@ -449,6 +400,91 @@ User signed the NC license via the local /sign page (2026-07-18) and mailed it; 
 
 Sweep completed (9 runs, ~4.5 h; table in COMPARISON.md "Update 2026-07-17"). Verdicts: **large-v3-turbo promoted to live default** (WER 25.1 / cpWER 29.4 / DER 10.3 on DVA1A+3E realtime — beats large-v3 on every metric incl. FLEURS 18.0 vs 22.2); **no diarization collapse in 8 runs** (day-1 event ≈ rare); frame-threshold default stays; **Sortformer v2 stays** (v2.1 no gain + stricter license). Server restarted on turbo config; **6-dialogue turbo validation running** (`--tag=-turbo-val`, ~3.2 h). Run-to-run variance measured: ±3 WER / ±1.5 DER pts — treat smaller deltas as noise. Task #12 closed; #13 remains open for the Voxtral/canary/parakeet bake-off.
 
+## 2026-07-17 — engine-reload bug found+fixed; config sweep running; license prefilled; latency first-look
+
+**CRITICAL BUG FIXED:** WLK's `TranscriptionEngine` is a hard singleton — re-instantiating returns the OLD engine and silently ignores new config ("engine loaded in 0.0s" symptom). The app's `/api/config` reload (and Config tab) had therefore been a NO-OP. Fixed via the official `TranscriptionEngine.reset()` in `EngineManager.load` (app/server.py); verified reloads now really load (10–14 s warm) and flags take effect. **No prior results are tainted** — all COMPARISON.md baselines ran on the startup config.
+
+**Config sweep running** (`scripts/run_sweep.py`, log `eval/results/sweep_queue.log`, ~5 h): stability 3× repeats (realtime, DVA1A+DVA3E) → frame-threshold 15/40 → large-v3-turbo (+FLEURS-25) → Sortformer v2.1 2× repeats. Driver reconfigures the engine via `/api/config` per stage, restores default at the end, aborts if available memory <20 GB. Gotchas encountered: argparse needs `--tag=-x` form for tags starting with “-”; `app/engine_config.json` only exists after first config POST (driver falls back to `/health`).
+
+**Latency first-look** (`eval/latency_report.py`, from existing realtime IFADV sessions): result cadence ~10–12 Hz; finalization lag (line-level) p50 ≈ −0.5–0 s, p90 ≈ 5–8 s. Word-level emission latency vs `.awd` still open (#14). Short FLEURS clips give degenerate lag samples — use long dialogues only.
+
+**CGN license prep:** `data/cgn/order/Licentie-NC_CGN_INGEVULD.docx` prefilled (organisatie, e-mail, Bijlage-2 onderzoeksomschrijving) via `scripts/fill_cgn_license.py` (fills FORMTEXT display runs in-place; structure verified with python-docx). Remaining user fields + steps: `data/cgn/order/TODO_SIGNING.md`; email body: `MAIL_DRAFT.txt`. Signature must be the user's own.
+
+**CommonVoice-nl:** parquet revision doesn't exist for fsicoli v22 / mozilla v17 → legacy route worked: `venvs/cvdl` (datasets==2.21.0) + `scripts/download_cv_legacy.py` → 1000 utts / 1.36 h exported (manifest `cv22_nl_test.json`).
+
 ## 2026-07-15 (late) — CGN order kit retrieved; license process + NC restriction documented
 
-Logged in to taalmaterialen.ivdnt.org with the user's account (inloggegevens lokaal, buiten de repo). Downloaded the CGN **order kit** (`data/cgn/order/`): order instructions + NC license (NL+EN docx). Verified process: user signs license → scan to servicedesk@ivdnt.org → INT sends the download link for BP_CGN_NC.zip (~96 GB, v2.0.3). **License is NON-COMMERCIAL, personal-research, no-public-derivatives** — full analysis in DATASETS.md §CGN; commercial edition exists separately. WordPress login recipe for future automation (test-cookie preset needed) is in the session history; the wpdmdl id is 1290.
+Downloaded via the user's taalmaterialen.ivdnt.org account: the CGN **order kit** (`data/cgn/order/`): order instructions + NC license (NL+EN docx). Verified process: user signs license → scan to servicedesk@ivdnt.org → INT sends the download link for BP_CGN_NC.zip (~96 GB, v2.0.3). **License is NON-COMMERCIAL, personal-research, no-public-derivatives** — full analysis in DATASETS.md §CGN; commercial edition exists separately.
+
+## 2026-07-15 (night) — baselines complete, COMPARISON.md written, offline upload mode shipped
+
+**pyannote gating accepted by user → method D unlocked and verified** (community-1 loads on CUDA in ~7 s; short-clip caveat: on a 60 s test clip it underclustered to 1 speaker — fine on full 15-min dialogues: 220–360 turns, DER 8–17% on the best dialogues).
+
+**All baselines done** (`scripts/run_baselines.sh` + chained `scripts/attribute_with_pyannote.py`; full tables + verdict in **COMPARISON.md**). IFADV-dev pooled: whisper-longform 30.1/87.3/46.2 (WER/cpWER/DER %), +pyannote 30.1/**44.7**/**21.4**, wlk-fast 49.3/57.3/26.9, wlk-stream (N=2) 35.0/62.5/32.7. *(Annotatie 2026-07-23: DER-cijfers hier zijn van vóór de referentie-timelinefix van 2026-07-17 — canonieke, herscoorde tabellen in COMPARISON.md.)* FLEURS-nl: offline 7.3% (matches literature → harness validated), wlk-fast 16.1%, wlk-stream 22.2%.
+
+**Decisions implemented:**
+- Upload default = **offline pipeline** (whisper long-form + pyannote): new `scripts/offline_job.py` (eval venv subprocess), app endpoints `POST/GET /api/offline/*`, File-tab mode selector updated. Verified end-to-end with a 60 s **m4a + loudnorm** upload (job pipeline asr→diarize→attribute, ~50 s wall). Sessions from offline jobs appear in the Sessions tab (mode "offline") for correction.
+- Unpaced "fast" streaming demoted to functional checks (COMPARISON finding 2: 49.3% vs 35.0% WER on long audio).
+
+**Key open issue found:** streaming Sortformer collapsed to near-single-speaker in 1 of 2 realtime long-dialogue runs (DVA1A: 793/118 s split; healthy fast-mode run: 400/491 s). Top next experiment: 5× repeat stability sweep across Sortformer latency presets + v2.1.
+
+**Gotchas fixed today (already folded into SETUP.md):** eval venv needed num2words (dialib import) + openai-whisper for offline jobs.
+
+**Next up (ordered, see COMPARISON.md open experiments):** diarization stability sweep → frame-threshold/turbo sweep → Voxtral-Realtime pilot (separate venv) → canary-1b-v2 offline (NeMo container) → latency analysis from events.jsonl + IFADV .awd → CV-nl via parquet route → CGN when license arrives.
+
+## 2026-07-15 (evening) — END-TO-END PIPELINE WORKING; app built; first real metrics
+
+**New user requirements folded in today:** (1) uploads must support **m4a** + optional loudness normalization (implemented: ffmpeg ingest accepts anything, single-pass EBU R128 `loudnorm` toggle); (2) both **realtime streaming** and **after-the-fact upload** processing available (implemented: replay speed=1.0 vs speed=0 fast/unpaced); (3) an **empirical methods comparison document** incl. classic whisper-large long-form baseline, proving what the diarized pipeline adds → docs/COMPARISON.md (task #11), harness supports methods: wlk-stream / wlk-fast / whisper-longform / whisper-longform+pyannote.
+
+**Built and verified:**
+- `dialib/` — normalizer (Dutch, v1, tests pass), seglst helpers, metrics (jiwer WER + meeteval cpWER/DER; meeteval returns per-session dicts → combined; md-eval Decimals → float; inverted WLK intervals clamped).
+- `app/` — full experiment server + UI (see WEBAPP.md): live mic, file upload (m4a/loudnorm/fast-or-realtime), eval tab w/ side-by-side reference + WER/cpWER/DER, sessions + corrections editor, config tab w/ in-process engine reload. Server runs on :8080.
+- `eval/run_eval.py` harness + `eval/rescore.py`; results under eval/results/.
+- Engine load: cold 784 s (incl. 2.9 GB whisper download), warm ~20-60 s. Memory with engine resident: ~23 GiB / 121 GiB.
+- **Bugs found & fixed:** (1) `AudioProcessor.is_pcm_input` must be set before `create_tasks()` (else "FFmpeg read timeout" hang); (2) `ready_to_stop` must be sent when the results generator ends, not after client disconnect (deadlock with waiting clients); (3) WLK emits occasional end<start segments → clamped in dialib.
+- **IFADV audio complete** (5.6 GB, 48 wavs = 24 dialogues × DVA/DVB views, 48 kHz stereo 15:00). R10 validation: per-channel energy-VAD speech time consistent with reference magnitudes; exact channel↔speaker mapping fuzzy due to mic crosstalk (fine — metrics are permutation-invariant).
+- **First real numbers** (details in eval/results/):
+  - FLEURS-nl (2 samples, sanity): wlk-stream WER 10.3% pooled vs whisper-longform offline 6.9% — expected streaming penalty visible.
+  - IFADV DVA1A (15-min real conversation, fast mode): **WER 52.4% / cpWER 55.3% / DER 18.0%** — conversational Dutch is the real challenge (backchannels/overlap); DER 18% from English-trained streaming Sortformer on Dutch is decent. Transcript quality qualitatively good; WER on overlapping dialogue is order-ambiguous → cpWER is the headline metric.
+- HF eval sets: FLEURS-nl test (364) + MLS-nl test exported (wav + SegLST + manifests). CommonVoice blocked by datasets-5.0 script removal (parked; not blocking).
+
+**In flight:** `scripts/run_baselines.sh` background queue (~2.5 h): {wlk-fast, whisper-longform, wlk-stream} × {FLEURS-nl, IFADV-dev} → COMPARISON.md.
+
+**User actions still needed:**
+1. Accept pyannote gating: open https://huggingface.co/pyannote/speaker-diarization-community-1 (logged in as the .env token account) and accept conditions → unlocks method D (offline diarization reference).
+2. CGN license request (docs/DATASETS.md §CGN).
+3. Try the UI: http://localhost:8080 (mic on localhost); for LAN mic: scripts/make_cert.sh + run with --ssl.
+
+## 2026-07-15 (later) — environment A verified, IFADV references built
+
+**R1 CONFIRMED (GPU on GB10 via pip wheels):** `venvs/wlk` = torch 2.11.0+cu130 / torchaudio 2.11.0+cu130 / torchcodec 0.14.0+cu130 (aarch64). `torch.cuda.is_available()==True`, `get_device_capability()==(12,1)`, arch list `[sm_80…sm_120]` (sm_121 absent is expected — sm_120 binaries run), GPU matmul finite. Note: install order left numpy out until WLK stage — harmless warning.
+
+**R2 CONFIRMED (native aarch64 pip install of the full chain):** `whisperlivekit[diarization-sortformer]==0.2.24` installed cleanly, no source-build failures. Key resolved versions: nemo-toolkit 2.7.3, transformers 4.57.6, faster-whisper 1.2.1 (+ctranslate2 4.8.1 wheel = CPU-only, irrelevant — we run `--disable-fast-encoder`), onnxruntime 1.27.0 (CPU), lightning 2.4.0, numpy 2.4.6, fastapi 0.139.0. NGC NeMo container fallback NOT needed for the live stack.
+
+**R7 PARTIALLY RESOLVED (flag drift found):** `wlk` is now a multi-command CLI (`serve|listen|run|transcribe|bench|diagnose|models|pull|rm|check`). **The language flag is `--lan`, NOT `--language`** — RESEARCH.md §4 command corrected here:
+`wlk serve --model large-v3 --lan nl --diarization --diarization-backend sortformer --disable-fast-encoder --host 0.0.0.0 --port 8000`
+Also available & relevant: `--backend-policy simulstreaming` (default policy), `--frame-threshold` (AlignAtt knob), `--beams/--decoder`, `--init-prompt/--static-init-prompt` (domain hotwords), `--ssl-certfile/--ssl-keyfile` (LAN mic), `--pcm-input`, `--api-token`, `--warmup-file`, `--min-chunk-size`, `--vac-chunk-size`, `--buffer_trimming`.
+
+**IFADV annotations converted (task #7 code done, validation pending audio):** `scripts/ifadv_to_seglst.py` (self-contained short-TextGrid parser incl. Praat trigraph decoding; variant selection Corr > plain > Shift > ORIGINAL/nodia, matches awd convention). All 20 dialogues → `eval/references/ifadv/{ID}.seglst.json,.rttm,.words.json`, zero warnings; 502–792 segments and ~~9.5k–14.7k words~~ per dialogue *(correctie 2026-07-23: dit waren fonen-tellingen; echte woordaantallen ~3–4k — zie entry 2026-07-23 einde nacht)*; per-speaker speech times plausible (high overlap is normal in free dialogue). Splits: `eval/manifests/ifadv_dev.json` (DVA1A,3E,6H,8K,10O,12S,14W,16AA,19AG,22AL) / `ifadv_test.json` (DVA2C,4C,7B,9M,11Q,13U,15Y,17AC,20AI,24AK — HELD OUT). Dialogue numbering has gaps (no 5,18,21,23) = 20-of-24-annotated, expected. Remaining validation once audio lands: channel-VAD cross-check + Praat spot-check (R10).
+
+**In flight:** IFADV AudioWAV.zip download (Zenodo is slow, wget -c resumable); `venvs/eval` pip install (task #4).
+
+## 2026-07-15 — project start: research, decisions, environment bring-up
+
+**Requirements fixed with user:** Dutch, fully local on DGX Spark; meetings 2–4 speakers; balanced latency (partials ≈2 s); inputs = browser mic (localhost + LAN), uploaded files incl. **m4a** (→ ffmpeg ingest + optional EBU R128 `loudnorm`); HF gated models OK (token in `.env`, mode 600).
+
+**Research done (12-agent verified web research, see RESEARCH.md + verification appendix):**
+- Stack decision: WhisperLiveKit 0.2.24 engine (Apache-2.0) + whisper large-v3 `--language nl` (SimulStreaming policy) + NVIDIA Streaming Sortformer v2 diarization (ungated CC-BY-4.0, ≤4 spk) as day-1 live pipeline; Voxtral-Mini-4B-Realtime / parakeet-tdt-0.6b-v3 / canary-1b-v2 as bake-off candidates; pyannote community-1 as offline diarization reference; meeteval+jiwer metrics, SegLST canonical format; IFADV as primary conversational eval corpus.
+- Platform facts: torch **cu130** aarch64 wheels are the only correct pip path (cp312 wheels exist up to torch 2.13.0 / torchaudio 2.11.0 / torchcodec 0.15.0 — checked the index directly today); CT2/faster-whisper aarch64 wheels are CPU-only; `nvidia-smi` memory column reads "Not Supported" on this platform (normal).
+- Known risk list R1–R14 in RESEARCH.md §8 — treat as the test checklist.
+- Gap: the "evaluation & metrics" research agent crashed (structured-output failure); its ground is mostly covered by §5/§6 of RESEARCH.md, but when building the eval harness, do a small focused check on: jiwer/meeteval exact APIs, Dutch normalizer details, whisper LoRA recipes. Noted as backfill work in Phase 4.
+
+**Machine verified:** GB10, aarch64, driver 580.159.03, CUDA 13.0, py3.12.3, docker+ffmpeg+node24, ~528 GB free, internet OK, venv creation OK.
+
+**In flight (background):**
+- `venvs/wlk` creation: torch==2.11.0+torchaudio==2.11.0+torchcodec==0.14.0 (cu130) + GPU smoke test, then `whisperlivekit[diarization-sortformer]==0.2.24`. (R1/R2/R7)
+- IFADV download from Zenodo (Annotations.zip + AudioWAV.zip 5.8 GB) → `data/ifadv/`.
+
+**Done today:** project skeleton; docs: README, CLAUDE.md, PLAN, DATASETS, RESEARCH (+appendix), this journal; HF token → `.env`.
+
+**Next:** finish env A install → GPU smoke test result recorded here → wlk --help verify flags → unzip+inventory IFADV → eval env (task #4) → HF datasets (task #5) → end-to-end go/no-go (task #6).

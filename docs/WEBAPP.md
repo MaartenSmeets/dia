@@ -18,11 +18,24 @@ Engine flags load from `app/engine_config.json` (WLK CLI flags verbatim, e.g. `"
 
 ## UI tabs
 
-- **Live mic** *(sinds 2026-07-23 expert-only, net als Evaluatie — gebruikersbesluit: de vergadertab toont zelf al een live transcript + doorlopende samenvatting, dus Live is alleen nog een motor-test)* — MediaRecorder (webm/opus, 250 ms chunks) → WS `/asr`; live speaker-colored transcript; gray italic = un-finalized partials; lag indicator = WLK's `remaining_time_*` metrics. On stop, the session is saved automatically. Standaardgebruikers zien drie werk-tabs: Vergadering · Bestand · Archief (+ Instellingen).
-- **File** — upload any ffmpeg-readable audio (**m4a/AAC included**); optional **loudness normalization** (single-pass EBU R128 `loudnorm=I=-16:TP=-1.5:LRA=11` — use for quiet/uneven phone recordings); mode: **fast** (unpaced, after-the-fact processing) or **realtime replay** (true streaming behavior, for latency-faithful experiments).
-- **Evaluate** — pick a dataset sample (IFADV dev/test, FLEURS, MLS, CV), server replays it through the exact live pipeline, reference shown side-by-side, then **WER / cpWER / DER** appear (scored via dialib: jiwer + meeteval, Dutch normalizer v1). The IFADV *test* split is marked HELD OUT — don't tune on it.
-- **Sessions** — every run (mic/file/eval) is stored under `data/sessions/<id>/` (`hyp.seglst.json`, `meta.json` incl. full engine config, `events.jsonl` for latency analysis). Click to review; edit speaker/text per segment; **Save correction** → `data/corrections/<id>.seglst.json` (grows the local curated set for eval/fine-tuning).
-- **Config** — edit engine flags as JSON; Apply reloads the engine in-process (old engine released + `torch.cuda.empty_cache()` first; takes 10–60 s).
+Standaardgebruiker (jurist): **Gesprek · Bestand · Archief · Instellingen**; de knop
+"geavanceerd" toont daarnaast de expert-tabs **Live** en **Evaluatie** plus de
+engine-instellingen.
+
+- **Gesprek** — server-side gespreksopname met live transcript + doorlopend verslag;
+  verslagvorm kiesbaar bij start; zie §Meetings hieronder voor de architectuur.
+- **Bestand** — upload any ffmpeg-readable audio (**m4a/AAC included**); optionele
+  loudness-normalisatie (EBU R128) voor zachte telefoonopnames; standaard de offline
+  "beste kwaliteit"-verwerking, realtime-simulatie beschikbaar voor experimenten.
+- **Archief** — alle opnames/uploads op één plek: teruglezen, corrigeren (per segment
+  spreker+tekst → `data/corrections/`), rollen bevestigen, verslag per sjabloon maken,
+  versies beheren, downloaden, privacy-compleet verwijderen.
+- **Instellingen** — taalmodel koppelen (autodetectie) en verslagsjablonen beheren.
+- **Live** *(expert)* — kale motor-test: MediaRecorder (webm/opus, 250 ms chunks) → WS
+  `/asr`; grijze tekst = voorlopige partials; sessie wordt bij stoppen bewaard.
+- **Evaluatie** *(expert)* — replay van een datasetitem (IFADV dev/test, CGN comp-a/tel,
+  FLEURS, MLS, CV) door exact de live-pijplijn, referentie ernaast, WER/cpWER/DER
+  (dialib: jiwer + meeteval, normalizer v1). Testsplits zijn HELD OUT — niet op tunen.
 
 ## WebSocket protocol (`/asr`)
 
@@ -62,17 +75,21 @@ Client → server:
 
 The **Meeting tab** records a meeting server-side: transcribe + diarize live, rolling Dutch summary every ~2.5 min, everything downloadable afterwards. Built for "leave it running during a meeting".
 
-### Samenvattingssjablonen, sprekerrollen en versiebeheer (2026-07-23, gebruikersverzoek)
+### Persistentie & lifecycle
+
+- **Persistence model:** the session lives in the server (`app/meetings.py`). The browser is (a) a *feeder* — streams mic audio over WS `/api/meetings/{id}/feed`, auto-reconnects every 2 s on drops, wall-clock gaps are filled with silence (≤5 min) so timestamps stay aligned; and (b) a *viewer* — polls `GET /api/meetings/{id}` every 2 s, so closing the tab/laptop changes nothing. Re-open the page later and "bekijk / heraansluiten" re-attaches your mic to the running meeting.
+- **Crash-safety:** raw PCM is appended to `data/meetings/<id>/audio.raw` continuously; `state.json` snapshots every 30 s. A server restart orphans the live pipeline but audio + transcript-so-far survive (in de lijst gemarkeerd als onderbroken; audio kan offline nabewerkt worden).
+- **Stop & artifacts:** `POST /api/meetings/{id}/stop` finalizes: final LLM summary over the whole transcript, then downloads at `/api/meetings/{id}/download/…`: `audio.wav`, `transcript.seglst.json`, `transcript.txt` (readable, `[mm:ss] spkN:` lines), `summary.md`, `meta.json`. File-source meetings (`source: "file:<eval-id>"`, used by tests/demos) auto-finalize when the file ends.
+- **Sources:** browser mic (the Spark has no capture hardware — checked) or `file:` replay. LAN-microfoons gebruiken het HTTPS-endpoint op :8443 (start automatisch mee — zie §Run).
+
+### Verslagsjablonen, sprekerrollen en versiebeheer
 
 - **Sjablonen** (`data/templates.json`; beheer in Instellingen; API `/api/templates` GET/POST/
   DELETE): een sjabloon = naam + optionele instructie + secties (één per regel). Drie
-  defaults: *Algemeen gespreksverslag*, *Letselschade-intakegesprek* (toedracht,
-  aansprakelijkheid, letsel/klachten, behandelingen, pre-existente klachten, werk/inkomen,
-  beperkingen, schadeposten-inventarisatie, verzekeringen, vervolgstappen — onderbouwd met
-  branchebronnen: intake-werkwijzen Drost/Letselverhalen, schadeposten-checklists,
-  pre-existentie-uitleg) en *Regelingsgesprek met de tegenpartij* (schadeposten/standpunten,
-  voorschotten+slotbetaling, finale kwijting, voorbehouden/heropening, belastinggarantie,
-  BGK, vaststellingsovereenkomst — bronnen: De Letselschade Raad, VSO-kennisbanken).
+  defaults: *Algemeen gespreksverslag*, *Letselschade-intakegesprek* en *Regelingsgesprek
+  met de tegenpartij* (sectie-inhoud: zie `DEFAULT_TEMPLATES` in app/server.py; de juridische
+  sjablonen zijn onderbouwd met webonderzoek naar gangbare intake- en
+  regelingsonderwerpen — zie PROGRESS.md 2026-07-23 namiddag).
 - **Sprekerrollen** (kaart "Samenvatting op maat" in het archiefdetail): `/api/roles/guess`
   laat de LLM per spreker (tot 6) een rol voorstellen (best-guess); de gebruiker bewerkt en
   **bevestigt**; pas dan gebruiken samenvattingen de rolnamen (ook de automatische
@@ -80,7 +97,7 @@ The **Meeting tab** records a meeting server-side: transcribe + diarize live, ro
 - **Hersamenvattten**: `/api/resummarize {kind,id,template_id}` maakt op basis van het
   (verfijnde) transcript een nieuw verslag volgens het gekozen sjabloon én onthoudt die
   keuze per gesprek (`template_id` in state.json/meta.json; het detail selecteert hem voor).
-- **Sjabloon per gesprek** (2026-07-23): kiesbaar bij de start (Gesprek-tab, standaard
+- **Sjabloon per gesprek**: kiesbaar bij de start (Gesprek-tab, standaard
   "automatisch"); de doorlopende én definitieve verslagen gebruiken de keuze. Zonder keuze
   kiest het taalmodel in de nabewerking zelf het meest passende sjabloon op basis van het
   transcript (`suggest_template`, terugval = algemeen; keuze wordt vastgelegd en is
@@ -97,7 +114,7 @@ The **Meeting tab** records a meeting server-side: transcribe + diarize live, ro
   in het detail (✏ Bewerken → nieuwe versie); ids zijn padinjectie-gevalideerd
   (`_safe_id`); templates.json wordt atomair geschreven.
 
-### Verbindingsbewaking + adaptieve audiokwaliteit (2026-07-23, gebruikersverzoek)
+### Verbindingsbewaking + adaptieve audiokwaliteit
 
 - **Zichtbaarheid:** header-pill (verschijnt alleen bij problemen): *verbinding traag · Xs
   achter* (upload-achterstand = `ws.bufferedAmount` / gemeten recorder-bitrate), *geen
@@ -113,22 +130,23 @@ The **Meeting tab** records a meeting server-side: transcribe + diarize live, ro
   (feeder herverbindt met nieuwe bitrate; server vult het gaatje met stilte). Automatische
   omschakeling wordt bewust NIET gepersisteerd — alleen expliciete gebruikerskeuzes.
   De server maakt van alles 16 kHz mono PCM, dus de herkenningskwaliteit lijdt nauwelijks.
-- **Lifecycle-hardening (gevonden via 3 adversariële reviewrondes):** feeder-state leeft in
+- **Lifecycle-hardening:** feeder-state leeft in
   de closure van `meetingStartFeeder` (niet op het globale meeting-object); teardown bij
   start/wissel/stop/serverzijdig-finished; await-race-bescherming rond getUserMedia
   (`meetingFeederStart`); wake lock met eigenaren-refcount; live-mic ruimt ook op bij
   abnormale WS-sluiting en bij Stop-vóór-open.
 
-- **Persistence model:** the session lives in the server (`app/meetings.py`). The browser is (a) a *feeder* — streams mic audio over WS `/api/meetings/{id}/feed`, auto-reconnects every 2 s on drops, wall-clock gaps are filled with silence (≤5 min) so timestamps stay aligned; and (b) a *viewer* — polls `GET /api/meetings/{id}` every 2 s, so closing the tab/laptop changes nothing. Re-open the page later and "bekijk / heraansluiten" re-attaches your mic to the running meeting.
-- **Crash-safety:** raw PCM is appended to `data/meetings/<id>/audio.raw` continuously; `state.json` snapshots every 30 s. A server restart orphans the live pipeline but audio + transcript-so-far survive (listed as "orphaned"; audio can be re-processed offline).
-- **Stop & artifacts:** `POST /api/meetings/{id}/stop` finalizes: final LLM summary over the whole transcript, then downloads at `/api/meetings/{id}/download/…`: `audio.wav`, `transcript.seglst.json`, `transcript.txt` (readable, `[mm:ss] spkN:` lines), `summary.md`, `meta.json`. File-source meetings (`source: "file:<eval-id>"`, used by tests/demos) auto-finalize when the file ends.
-- **Sources:** browser mic (the Spark has no capture hardware — checked) or `file:` replay. LAN mics need the HTTPS variant (`scripts/run_app.sh --ssl`).
-
 ## Testing
 
-`venvs/wlk/bin/python tests/test_app_e2e.py` against the running server: health, uploads (wav+loudnorm, **m4a**), eval catalog/reference, live-pipeline WS replay, scoring, session persistence + corrections, summarize, meeting lifecycle (file-source auto-finalize, artifacts, empty-meeting edge case, listing). **Status 2026-07-22: 15/16 pass; the `summarize` test fails only while GPU batch jobs starve the LLM (contention, not a bug — see ops note).** The suite found and led to fixes for two real meeting bugs: file-source meetings never finalizing, and a stop-path hang on empty pipelines.
+`venvs/wlk/bin/python tests/test_app_e2e.py` draait 30 end-to-end-checks tegen de lopende
+server: health, uploads (wav+loudnorm, **m4a**), eval-catalogus/referenties, live-pipeline
+WS-replay, scoring, sessie-persistentie + correcties, verslag maken, volledige
+gesprekslevenscyclus (auto-finalisatie, artefacten, lege-opname-randgeval, lijsten),
+sjablonen-CRUD, rollen, hersamenvattten, versiegeschiedenis (bewerken/herstellen),
+padinjectie-weigering en privacy-compleet verwijderen. Historie en bugvangsten: PROGRESS.md.
 
-**Ops note (GB10 unified GPU):** heavy batch jobs (training, batch scoring) starve the vLLM summarizer to unresponsiveness. Schedule summarization-dependent work outside batch windows; the eval chains do this by ordering LLM steps last.
+**Ops note (GB10 unified GPU):** LLM-afhankelijke stappen buiten zware batchvensters
+plannen — details en vuistregels in [OPS-LLM.md](OPS-LLM.md).
 
 ## Design notes / gotchas
 

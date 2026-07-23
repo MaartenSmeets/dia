@@ -1,12 +1,16 @@
 # SUMMARY-EVAL.md — does diarization (and offline quality) improve summaries?
 
+> **Leeswijzer: de geldige uitslag staat in §Results v4** (labels = ×3,5 attributie-
+> accuratesse). v1–v3 blijven staan als gemarkeerde meetprotocol-historie — niet citeren.
+
 **User questions (2026-07-21):** for the call-center use case —
 1. Live rolling summarization vs summarizing offline afterwards: how big is the quality difference?
 2. Is a summary of a **diarized** transcript more accurate than one from a transcript **without** diarization?
 
 ## Experiment design (implemented: `eval/summary_eval.py`)
 
-Per dialogue (IFADV-dev now; CGN telephone comp-c/d once its references are built), five transcript
+Per dialogue (IFADV-dev; de cgn_tel-referenties bestaan inmiddels maar zijn hier nog niet
+gedraaid), six transcript
 conditions feed the **same summarizer LLM with the same prompt**:
 
 | Cond | Transcript source | Speaker labels | Answers |
@@ -15,6 +19,7 @@ conditions feed the **same summarizer LLM with the same prompt**:
 | B | same live text, labels stripped | ✗ | isolates diarization at fixed ASR quality |
 | C | offline whisper+pyannote (existing method-D results) | ✓ | offline+diar |
 | D | offline whisper long-form (existing results) | ✗ | classic no-diar baseline |
+| E | fusie: live-sprekerbeurten × offline-M2-woorden (het productiepad) | ✓ | meet de productie-samenvatting direct |
 | R | gold reference transcript | ✓ | ceiling |
 
 A−B and C−D isolate **the diarization effect** (same words, ± labels). A−C isolates **live-vs-offline
@@ -42,11 +47,15 @@ experiment only costs LLM calls.
 ## How to run
 
 ```bash
-# needs a local OpenAI-compatible LLM: set SUMMARIZER_URL (+ SUMMARIZER_MODEL) in .env
-venvs/wlk/bin/python eval/summary_eval.py --manifest ifadv_dev --limit 4 \
+# Vereist een lokaal OpenAI-compatibel LLM (SUMMARIZER_URL in .env of app-instellingen).
+# LET OP: de LLM-server MOET zonder prefix-caching draaien (OPS-LLM.md VALKUIL 2) —
+# anders deterministische degeneratie (gemeten, zie Results v3).
+# v4-protocol: labelhernoeming (A/C/E) + degeneratie-guards zitten in het script.
+venvs/wlk/bin/python eval/summary_eval.py --manifest ifadv_dev --limit 6 \
   --live-run    eval/results/20260717-1416-wlk-stream-turbo-val-ifadv_dev \
   --offline-run eval/results/20260715-1805-whisper-longform-ifadv_dev \
-  --offlineD-run eval/results/20260715-1912-whisper-longform+pyannote-ifadv_dev
+  --offlineD-run eval/results/20260715-1912-whisper-longform+pyannote-ifadv_dev \
+  --fused-run   eval/results/20260722-2023-merged-liveturns-offwords-ifadv_dev
 ```
 
 ## Results v1 — 2026-07-22 ⚠️ VERVUILD DOOR GEMETEN RECHTER-ARTEFACT — niet citeren
@@ -55,11 +64,11 @@ venvs/wlk/bin/python eval/summary_eval.py --manifest ifadv_dev --limit 4 \
 sprekerlabelNAMEN ondanks de semantische instructie — dezelfde E-samenvatting met
 Spk1↔Spk2 geswapt flipte het oordeel 'fout'→'correct'. Gevolg: voor elke gelabelde
 machineconditie is de attributiescore per item een muntworp (loopt de labelnummering
-toevallig met goud mee of niet). Alleen R_gold is schoon. **Fix in v2 (loopt):**
+toevallig met goud mee of niet). Alleen R_gold is schoon. **Fix (uitgevoerd — zie v4):**
 gelabelde condities (A/C/E) krijgen vóór het samenvatten een globale labelhernoeming naar
 de gouden namen via tijdsoverlap (`remap_speakers_to_ref`); echte attributiefouten blijven
 gewoon fout tellen. De v1-tabel hieronder blijft alleen staan als bewijsstuk van het
-artefact; de v2-tabel eronder is de geldige meting.
+artefact; de v4-tabel verderop is de geldige meting.
 
 Oude kop: N=6 (ifadv_dev), rechter+samenvatter = qwen36 (AEON 27B NVFP4)
 
@@ -137,37 +146,8 @@ alleen de labels verschillen.)
   → detecteer en bypass.
 - vLLM-prefix-caching op hybride Mamba-modellen corrumpeert deterministisch → uit.
 
-**Leesinstructie — attributie-acc conflateert dekking met attributie:** "afwezig" (de
-samenvatting behandelt dat detail niet) telt als fout, waardoor zelfs goud maar 0,50 haalt
-(de rechter stelt deels detailvragen die een goede samenvatting terecht weglaat).
-**`misattributie` is de zuivere attributiemaat** (expliciet aan de verkeerde spreker
-toegeschreven) — gebruik die.
-
-**Bevindingen (deltas, niet absolute niveaus — zie caveats):**
-1. **Transcriptkwaliteit domineert alles**: goud misattribueert 8%, elke machineconditie 3–7×
-   zoveel. De grootste samenvattingswinst zit dus in beter transcript, niet in prompt-tuning.
-2. **Live-diarizationlabels helpen**: misattributie 27,8% mét vs 33,3% zónder labels op
-   dezelfde live-tekst. Klein maar consistent met de eerdere N=4-run.
-3. **Pyannote-labels op longform helpen NIET** (58,3% mét vs 52,8% zónder — eerder iets
-   slechter): de attributie-bottleneck van de pyannote-route (DER 18–24%) sijpelt door tot in
-   de samenvatting. Zelfde conclusie als CGN-VALUE.md: sprekertoewijzing is de zwakke schakel,
-   en Sortformer-beurten zijn de betere bron.
-4. Offline-longform-condities halen ook meer hallucinaties (5,83 kaal) — lange ongelabelde
-   lappen tekst verleiden het LLM tot gissen.
-
-**Antwoord op de kernvraag** (is een samenvatting mét diarization accurater?): **ja, mits de
-sprekerlabels goed zijn** — live-Sortformer-labels verlagen misattributie; slechte
-(pyannote-longform-)labels voegen niets toe. De productiepijplijn (fusie: live-beurten ×
-offline-woorden) combineert precies de goede labelbron met de beste tekst — conditie E meet
-dit direct.
-
-**Vergelijkbaarheid:** absolute niveaus zijn NIET vergelijkbaar met de eerdere N=4-run
-(andere rechter: 27B AEON i.p.v. 35B MoE; strengere vragen). Binnen deze run zijn de deltas
-het signaal.
-
 ## Live summarization in the app (implemented)
 
-The Live tab has a "Samenvatting bijwerken" button + 60-s auto mode (rolling summary carried
-forward); Sessions tab can summarize any stored session. Backend: `POST /api/summarize` →
-`SUMMARIZER_URL` (OpenAI-compatible). Dutch call-center prompt: onderwerp / kernpunten /
-wie-zei-wat / afspraken-acties.
+In de app: de Gesprek-tab toont een doorlopend gespreksverslag tijdens de opname; het
+Archief-detail maakt verslagen per sjabloon (met rollen en versiebeheer — zie WEBAPP.md).
+Backend: `POST /api/summarize` → `SUMMARIZER_URL` (OpenAI-compatibel).
